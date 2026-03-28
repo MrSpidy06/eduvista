@@ -1,0 +1,23 @@
+{
+  "name": "eduvista-backend",
+  "version": "0.1.0",
+  "description": "Express API for the Student Course Registration System",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1",
+    "mysql2": "^3.10.3",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.15",
+    "stripe": "^16.10.0"
+  }
+}
