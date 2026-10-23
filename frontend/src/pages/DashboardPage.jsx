@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
+import {
+  buildAllCourseSuggestionOptions,
+  buildCourseSuggestionGroups,
+  COURSE_CATEGORY_OPTIONS,
+  COURSE_DELIVERY_MODE_OPTIONS,
+  detectRecommendedAcademicLevel
+} from "../lib/courseOptions.js";
 
 const API_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:4000/api").replace(
   /\/api$/,
@@ -20,6 +27,11 @@ const STATUS_TONES = {
   ready: "ok",
   incomplete: "warn",
   draft: "muted",
+  eligible: "ok",
+  ineligible: "bad",
+  high: "ok",
+  medium: "warn",
+  low: "muted",
   university: "muted",
   student: "muted",
   admin: "muted"
@@ -98,6 +110,81 @@ function EmptyState({ copy }) {
   return <p className="empty-copy">{copy}</p>;
 }
 
+const formatEligibilityLabel = (course) => {
+  if (course.eligibility_summary) {
+    return course.eligibility_summary;
+  }
+  if (Array.isArray(course.eligible_academic_levels) && course.eligible_academic_levels.length) {
+    return `${course.eligible_academic_levels.map((level) => `${level}th`).join(" / ")} students`;
+  }
+  return "Open to all students";
+};
+
+const formatEligibleAcademicLevels = (value) => {
+  const levels = String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (levels.length === 0) {
+    return "Open";
+  }
+
+  return `${levels.map((level) => `${level}th`).join(" / ")}`;
+};
+
+const formatDeliveryMode = (value) => {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "both") {
+    return "Online + Offline";
+  }
+  if (normalized === "online") {
+    return "Online";
+  }
+  if (normalized === "offline") {
+    return "Offline";
+  }
+  return "Not set";
+};
+
+const buildCourseUploadWarnings = (courseForm, profileForm) => {
+  const warnings = [];
+  const qualification = String(courseForm.qualificationRequired || "").toLowerCase();
+  const eligibleLevels = String(courseForm.eligibleAcademicLevels || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const recommendedAcademicLevel = detectRecommendedAcademicLevel(courseForm.title);
+
+  if (!String(profileForm.universityName || "").trim()) {
+    warnings.push("Set the college name in University Profile before publishing a course.");
+  }
+
+  if (eligibleLevels.length === 0) {
+    warnings.push("Select whether 10th students, 12th students, or both can apply.");
+  }
+
+  if (
+    eligibleLevels.length === 1 &&
+    eligibleLevels[0] === "10" &&
+    /(10\+2|12th|pcm|pcb|jee|neet|keam)/i.test(qualification)
+  ) {
+    warnings.push("10th-only selection conflicts with a qualification that reads like a 12th-level admission.");
+  }
+
+  if (recommendedAcademicLevel && !eligibleLevels.includes(recommendedAcademicLevel)) {
+    warnings.push(
+      `"${courseForm.title}" is usually an after ${recommendedAcademicLevel === "10" ? "10th" : "12th"} listing. Check the grade selection.`
+    );
+  }
+
+  if (/(relevant ug|ug degree|graduate|graduation|bachelor|post basic|postgraduate|master)/i.test(qualification)) {
+    warnings.push("This qualification reads like a UG/PG entry course. EduVista should stay focused on school-level admissions.");
+  }
+
+  return warnings;
+};
+
 function DashboardShell({
   profile,
   pages,
@@ -109,54 +196,97 @@ function DashboardShell({
   notice
 }) {
   return (
-    <main className="portal-shell">
-      <aside className="portal-sidebar">
-        <div className="sidebar-brand">
-          <p className="sidebar-kicker">EduVista</p>
+    <main className="cool-dash-shell">
+      <aside className="cool-dash-sidebar">
+        <div className="cool-dash-brand">
+          <div className="cool-dash-brand-logo">
+            <svg width="28" height="28" viewBox="0 0 42 42" fill="none">
+              <rect width="42" height="42" rx="12" fill="url(#dbLogo)" />
+              <path d="M12 28V14l9 7-9 7z" fill="rgba(255,255,255,0.95)" />
+              <path d="M21 21l9-7v14l-9-7z" fill="rgba(255,255,255,0.5)" />
+              <defs>
+                <linearGradient id="dbLogo" x1="0" y1="0" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#6366f1" />
+                  <stop offset="1" stopColor="#8b5cf6" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <span>EduVista</span>
+          </div>
           <h1>{profile?.role === "university" ? profile.universityName || profile.name : profile?.name}</h1>
-          <p className="sidebar-meta">{profile?.role} dashboard</p>
+          <div className="cool-dash-brand-role">
+            {profile?.role === "university" ? "Institution" : profile?.role}
+          </div>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="cool-dash-nav">
           {pages.map((page) => (
             <button
               key={page.id}
               type="button"
-              className={activePage === page.id ? "sidebar-link active" : "sidebar-link"}
+              className={`cool-dash-nav-link ${activePage === page.id ? "active" : ""}`}
               onClick={() => setActivePage(page.id)}
             >
-              <span>{page.label}</span>
-              <small>{page.note}</small>
+              <div className="cool-dash-nav-icon">{page.icon || "📄"}</div>
+              <div className="cool-dash-nav-label">
+                <span>{page.label}</span>
+                <small>{page.note}</small>
+              </div>
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <p>Profile status</p>
-          <StatusPill status={profile?.profileComplete ? "ready" : "incomplete"} />
-          <button type="button" className="outline-btn full-width" onClick={onLogout}>
-            Logout
+        <div className="cool-dash-sidebar-footer">
+          <button type="button" className="cool-dash-logout" onClick={onLogout}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Log out
           </button>
         </div>
       </aside>
 
-      <div className="portal-main">
-        <header className="portal-header">
-          <div>
-            <p className="brand-kicker">Classic Admissions Workspace</p>
-            <h1>{pages.find((page) => page.id === activePage)?.label}</h1>
-            <p>
-              {profile?.role === "student"
-                ? `Academic level: ${profile?.academicLevel || "Not set"}`
-                : `Department: ${profile?.departmentName || "Not set"}`}{" "}
-              | Account:{" "}
-              <StatusPill status={profile?.role || "user"} />
-            </p>
+      <div className="cool-dash-main">
+        <header className="cool-dash-header">
+          <div className="cool-dash-header-top">
+            <div>
+              <div className="cool-dash-header-kicker">
+                {profile?.role === "university" ? "Institution Workspace" : "Dashboard"}
+              </div>
+              <h1>{pages.find((page) => page.id === activePage)?.label}</h1>
+              <div className="cool-dash-header-meta">
+                {profile?.role === "student"
+                  ? `Academic level: ${profile?.academicLevel || "Not set"}`
+                  : `Department: ${profile?.departmentName || "Not set"}`}
+                <span className="cool-dash-header-badge">{profile?.role || "user"}</span>
+              </div>
+            </div>
           </div>
         </header>
 
-        {error ? <p className="banner error">{error}</p> : null}
-        {notice ? <p className="banner success">{notice}</p> : null}
+        {/* Toast notifications */}
+        <div className="cool-toast-container">
+          {error ? (
+            <div className="cool-toast error">
+              <div className="cool-toast-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
+              {error}
+            </div>
+          ) : null}
+          {notice ? (
+            <div className="cool-toast success">
+              <div className="cool-toast-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+              </div>
+              {notice}
+            </div>
+          ) : null}
+        </div>
 
         <div className="page-grid">{children}</div>
       </div>
@@ -175,7 +305,7 @@ function StudentDashboard({
   onProfileUpdate
 }) {
   const navigate = useNavigate();
-  const [page, setPage] = useState("overview");
+  const [page, setPage] = useState("discover");
   const [loading, setLoading] = useState(true);
   const [studentProfile, setStudentProfile] = useState(null);
   const [studentDocuments, setStudentDocuments] = useState([]);
@@ -210,10 +340,9 @@ function StudentDashboard({
   });
 
   const pages = [
-    { id: "overview", label: "Overview", note: "Profile, alerts, and quick actions" },
-    { id: "discover", label: "Course Suggestions", note: "Browse recommended colleges and courses" },
-    { id: "applications", label: "Applications", note: "Track status and upload requested files" },
-    { id: "profile", label: "Profile Record", note: "Academic details stored in the database" }
+    { id: "discover", label: "Course Suggestions", note: "Browse recommended colleges and courses", icon: "🔍" },
+    { id: "applications", label: "Applications", note: "Track status and upload requested files", icon: "📋" },
+    { id: "profile", label: "Profile Record", note: "Academic details stored in the database", icon: "👤" }
   ];
 
   const refresh = async () => {
@@ -272,16 +401,16 @@ function StudentDashboard({
 
   const stats = [
     { label: "Suggested Courses", value: catalog.length, note: "Matching current filters" },
+    {
+      label: "Strong Matches",
+      value: catalog.filter((course) => course.is_eligible && course.recommendation_score >= 75).length,
+      note: "Eligible courses with a high recommendation score"
+    },
     { label: "Applications", value: applications.length, note: "Submitted course applications" },
     {
       label: "Unread Alerts",
       value: notifications.summary?.unread || 0,
       note: "System and university messages"
-    },
-    {
-      label: "Documents",
-      value: studentDocuments.length,
-      note: "Academic files linked to your profile"
     }
   ];
 
@@ -357,93 +486,7 @@ function StudentDashboard({
       error={error}
       notice={notice}
     >
-      {page === "overview" ? (
-        <>
-          <section className="stat-grid">
-            {stats.map((item) => (
-              <StatCard key={item.label} {...item} />
-            ))}
-          </section>
 
-          <Panel title="Profile Snapshot" note="This data is used for course suggestions and registration decisions.">
-            <div className="split-grid">
-              <div className="detail-card">
-                <h3>{studentProfile?.full_name || profile.name}</h3>
-                <p>Academic level: {studentProfile?.academic_level || profile.academicLevel || "-"}</p>
-                <p>Board: {studentProfile?.board_name || "-"}</p>
-                <p>School: {studentProfile?.school_name || "-"}</p>
-                <p>Score: {studentProfile?.score_percent || "-"}%</p>
-              </div>
-              <div className="detail-card">
-                <h3>Course direction</h3>
-                <p>{studentProfile?.target_course || "Not added yet."}</p>
-                <p>{studentProfile?.marks_summary || "No marks summary added yet."}</p>
-                <div className="row-actions top-gap">
-                  <button type="button" onClick={() => navigate("/profile-setup")}>
-                    Edit Profile Setup
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Panel>
-
-          <Panel
-            title="Inbox"
-            note="Recent alerts from the platform and universities."
-            actions={
-              notifications.summary?.unread ? (
-                <button
-                  type="button"
-                  className="outline-btn"
-                  onClick={async () => {
-                    try {
-                      await api.markAllNotificationsRead(token);
-                      onNotice("Notifications marked as read.");
-                      await refresh();
-                    } catch (requestError) {
-                      onError(toMessage(requestError));
-                    }
-                  }}
-                >
-                  Mark all read
-                </button>
-              ) : null
-            }
-          >
-            {notifications.notifications?.length ? (
-              <ul className="document-list">
-                {notifications.notifications.slice(0, 5).map((item) => (
-                  <li key={item.id}>
-                    <div>
-                      <strong>{item.category.replace(/_/g, " ")}</strong>
-                      <span>{item.message}</span>
-                    </div>
-                    <small>{formatDateTime(item.created_at)}</small>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState copy="No alerts yet." />
-            )}
-          </Panel>
-
-          <Panel title="Recent Notices" note="Admissions updates and deadlines.">
-            {announcements.length === 0 ? (
-              <EmptyState copy="No active notices." />
-            ) : (
-              <div className="card-list">
-                {announcements.slice(0, 3).map((notice) => (
-                  <article key={notice.id} className="notice-card">
-                    <h3>{notice.title}</h3>
-                    <p>{notice.body}</p>
-                    <small>{formatDateTime(notice.created_at)}</small>
-                  </article>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </>
-      ) : null}
 
       {page === "discover" ? (
         <>
@@ -517,18 +560,24 @@ function StudentDashboard({
               <article key={course.id} className="catalog-card">
                 <div className="catalog-card-head">
                   <span className="catalog-badge">{course.category}</span>
-                  <StatusPill
-                    status={course.application_status || (course.is_closed ? "closed" : "open")}
-                  />
+                  <div className="row-actions">
+                    <StatusPill
+                      status={course.application_status || (course.is_closed ? "closed" : "open")}
+                    />
+                    <StatusPill status={course.is_eligible ? "eligible" : "ineligible"} />
+                    <StatusPill status={course.recommendation_band || "low"} />
+                  </div>
                 </div>
                 <h3>{course.title}</h3>
                 <p className="catalog-school">{course.university_name}</p>
                 <p className="catalog-meta">
                   {course.location_city}, {course.location_state} | {course.duration_label}
                 </p>
-                <p>{course.description}</p>
+                <p className="catalog-meta">Mode: {formatDeliveryMode(course.delivery_mode)}</p>
+                <p>{course.description || "Admissions listing ready for student applications."}</p>
                 <ul className="meta-list">
                   <li>Qualification: {course.qualification_required}</li>
+                  <li>Eligibility: {formatEligibilityLabel(course)}</li>
                   <li>Fee: {course.approx_fee_total || "Contact university"}</li>
                   <li>Deadline: {formatDate(course.application_deadline)}</li>
                   <li>Required documents: {course.requirement_count}</li>
@@ -537,6 +586,19 @@ function StudentDashboard({
                   <strong>Student application note</strong>
                   <p>{course.application_bar_label || "Upload required files and apply."}</p>
                 </div>
+                <div className="info-block">
+                  <strong>Smart match score</strong>
+                  <p>{course.recommendation_score || 0}/100</p>
+                  {course.recommendation_reasons?.length ? (
+                    <small>{course.recommendation_reasons.join(" ")}</small>
+                  ) : null}
+                </div>
+                {!course.is_eligible ? (
+                  <div className="info-block">
+                    <strong>Eligibility status</strong>
+                    <p>{course.eligibility_reason || "Update your profile to check eligibility."}</p>
+                  </div>
+                ) : null}
                 {applicationDraft.courseId === course.id ? (
                   <div className="stack top-gap">
                     <textarea
@@ -579,7 +641,7 @@ function StudentDashboard({
                     ) : (
                       <button
                         type="button"
-                        disabled={Boolean(course.is_closed)}
+                        disabled={Boolean(course.is_closed || !course.is_eligible)}
                         onClick={() =>
                           setApplicationDraft({
                             courseId: course.id,
@@ -587,7 +649,11 @@ function StudentDashboard({
                           })
                         }
                       >
-                        {course.is_closed ? "Deadline Passed" : "Apply Now"}
+                        {course.is_closed
+                          ? "Deadline Passed"
+                          : course.is_eligible
+                            ? "Apply Now"
+                            : "Not Eligible"}
                       </button>
                     )}
                     {course.brochure_path ? (
@@ -841,11 +907,10 @@ function UniversityDashboard({
   notice,
   onProfileUpdate
 }) {
-  const [page, setPage] = useState("overview");
+  const [page, setPage] = useState("applications");
   const [loading, setLoading] = useState(true);
   const [profileForm, setProfileForm] = useState({
     fullName: "",
-    departmentId: "",
     universityName: "",
     shortName: "",
     state: "",
@@ -860,8 +925,6 @@ function UniversityDashboard({
     bannerPath: "",
     applicationBarLabel: ""
   });
-  const [departments, setDepartments] = useState([]);
-  const [stats, setStats] = useState({ totalCourses: 0, totalApplications: 0, pendingReviews: 0 });
   const [courses, setCourses] = useState([]);
   const [requirements, setRequirements] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState(null);
@@ -871,7 +934,8 @@ function UniversityDashboard({
   const [courseForm, setCourseForm] = useState({
     code: "",
     title: "",
-    category: "Engineering",
+    category: "Technology",
+    deliveryMode: "offline",
     description: "",
     credits: "4",
     seatsTotal: "40",
@@ -882,10 +946,18 @@ function UniversityDashboard({
     locationCity: "",
     durationLabel: "4 Years",
     qualificationRequired: "",
+    eligibleAcademicLevels: "10,12",
+    minimumScorePercent: "",
     approxFeeTotal: "",
     applicationDeadline: "",
     brochurePath: "",
-    requiredDocumentsIntro: ""
+    requiredDocumentsIntro: "",
+    requirements: []
+  });
+  const [draftRequirement, setDraftRequirement] = useState({
+    documentName: "",
+    instructions: "",
+    isRequired: true
   });
   const [requirementForm, setRequirementForm] = useState({
     documentName: "",
@@ -896,7 +968,8 @@ function UniversityDashboard({
   const buildEmptyCourseForm = (state = profileForm.state || "", city = profileForm.city || "") => ({
     code: "",
     title: "",
-    category: "Engineering",
+    category: "Technology",
+    deliveryMode: "offline",
     description: "",
     credits: "4",
     seatsTotal: "40",
@@ -907,40 +980,62 @@ function UniversityDashboard({
     locationCity: city,
     durationLabel: "4 Years",
     qualificationRequired: "",
+    eligibleAcademicLevels: "10,12",
+    minimumScorePercent: "",
     approxFeeTotal: "",
     applicationDeadline: "",
     brochurePath: "",
-    requiredDocumentsIntro: ""
+    requiredDocumentsIntro: "",
+    requirements: []
   });
+  const courseUploadWarnings = useMemo(
+    () => buildCourseUploadWarnings(courseForm, profileForm),
+    [courseForm, profileForm]
+  );
+  const courseSuggestionGroups = useMemo(
+    () => buildCourseSuggestionGroups(courseForm.eligibleAcademicLevels, courseForm.title),
+    [courseForm.eligibleAcademicLevels, courseForm.title]
+  );
+  const courseSuggestionOptions = useMemo(
+    () => buildAllCourseSuggestionOptions(courseForm.eligibleAcademicLevels),
+    [courseForm.eligibleAcademicLevels]
+  );
+  const coursePreviewRow = {
+    category: courseForm.category || "-",
+    mode: formatDeliveryMode(courseForm.deliveryMode),
+    collegeName: profileForm.universityName || profile.universityName || "-",
+    state: courseForm.locationState || profileForm.state || "-",
+    city: courseForm.locationCity || profileForm.city || "-",
+    course: courseForm.title || "-",
+    duration: courseForm.durationLabel || "-",
+    qualification: courseForm.qualificationRequired || "-",
+    fee: courseForm.approxFeeTotal || "-",
+    grades: formatEligibleAcademicLevels(courseForm.eligibleAcademicLevels)
+  };
+  const canPublishCourses = Boolean((profileForm.universityName || profile.universityName || "").trim());
 
   const pages = [
-    { id: "overview", label: "Overview", note: "Admissions activity and portfolio" },
-    { id: "profile", label: "University Profile", note: "Brand, contact, application bar" },
-    { id: "courses", label: "Publish Courses", note: "Dataset-style course management" },
-    { id: "applications", label: "Review Applications", note: "Shortlist and decide applicants" }
+    { id: "applications", label: "Review Applications", note: "Shortlist and decide applicants", icon: "📋" },
+    { id: "publish", label: "Publish Courses", note: "Create new course listings", icon: "🚀" },
+    { id: "courses", label: "Courses", note: "Manage published courses", icon: "📚" }
   ];
 
   const refresh = async () => {
     setLoading(true);
     try {
-      const [profileResult, meResult, signupMeta, dashboardResult, courseResult, applicationResult] =
+      const [profileResult, meResult, courseResult, applicationResult] =
         await Promise.all([
           api.profile(token),
           api.me(token),
-          api.signupMeta(),
-          api.universityDashboard(token),
           api.universityCourses(token),
           api.universityApplications(token)
         ]);
 
       onProfileUpdate(meResult.user);
-      setDepartments(signupMeta.departments || []);
-      setStats(dashboardResult.stats || {});
       setCourses(courseResult.courses || []);
       setApplications(applicationResult.applications || []);
       setProfileForm({
         fullName: profileResult.profile?.full_name || meResult.user.name || "",
-        departmentId: String(profileResult.profile?.department_id || meResult.user.departmentId || ""),
         universityName: profileResult.profile?.university_name || meResult.user.universityName || "",
         shortName: profileResult.profile?.short_name || "",
         state: profileResult.profile?.state || "",
@@ -966,6 +1061,18 @@ function UniversityDashboard({
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (editingCourseId) {
+      return;
+    }
+
+    setCourseForm((current) => ({
+      ...current,
+      locationState: current.locationState || profileForm.state || "",
+      locationCity: current.locationCity || profileForm.city || ""
+    }));
+  }, [editingCourseId, profileForm.city, profileForm.state]);
 
   const loadRequirements = async (courseId) => {
     try {
@@ -997,27 +1104,51 @@ function UniversityDashboard({
     }
   };
 
+  const applySuggestedCourse = (title, suggestedLevel) => {
+    setCourseForm((current) => ({
+      ...current,
+      title,
+      eligibleAcademicLevels:
+        current.eligibleAcademicLevels === "10,12" ? suggestedLevel : current.eligibleAcademicLevels
+    }));
+  };
+
   const saveCourse = async (event) => {
     event.preventDefault();
+
+    if (!canPublishCourses) {
+      onError("Set the college name in the University Profile before publishing courses.");
+      return;
+    }
+
     try {
       const payload = {
         ...courseForm,
+        category: courseForm.category || "Technology",
+        deliveryMode: courseForm.deliveryMode || "offline",
+        locationState: courseForm.locationState || profileForm.state || "",
+        locationCity: courseForm.locationCity || profileForm.city || "",
         credits: Number(courseForm.credits),
         seatsTotal: Number(courseForm.seatsTotal),
-        departmentId: courseForm.departmentId ? Number(courseForm.departmentId) : null
+        departmentId: courseForm.departmentId ? Number(courseForm.departmentId) : null,
+        minimumScorePercent:
+          courseForm.minimumScorePercent === ""
+            ? null
+            : Number(courseForm.minimumScorePercent)
       };
 
       if (editingCourseId) {
         await api.updateUniversityCourse(token, editingCourseId, payload);
-        onNotice("Course updated.");
+        onNotice("✅ Course updated successfully and saved to database!");
       } else {
         await api.createUniversityCourse(token, payload);
-        onNotice("Course published.");
+        onNotice("✅ Course published successfully! It's now saved in the database and visible to students.");
       }
 
       setEditingCourseId(null);
       setCourseForm(buildEmptyCourseForm());
       await refresh();
+      setPage("courses");
     } catch (requestError) {
       onError(toMessage(requestError));
     }
@@ -1040,23 +1171,6 @@ function UniversityDashboard({
     }
   };
 
-  const uploadAsset = async (field, file) => {
-    if (!file) {
-      return;
-    }
-    try {
-      const result = await api.uploadUniversityAsset(token, file);
-      if (field === "brochurePath") {
-        setCourseForm((current) => ({ ...current, brochurePath: result.filePath }));
-      } else {
-        setProfileForm((current) => ({ ...current, [field]: result.filePath }));
-      }
-      onNotice("Asset uploaded.");
-    } catch (requestError) {
-      onError(toMessage(requestError));
-    }
-  };
-
   if (loading) {
     return <p className="loading-copy">Loading university workspace...</p>;
   }
@@ -1071,335 +1185,118 @@ function UniversityDashboard({
       error={error}
       notice={notice}
     >
-      {page === "overview" ? (
+      {page === "publish" ? (
         <>
-          <section className="stat-grid">
-            <StatCard label="Published Courses" value={stats.totalCourses} note="Live in admissions catalog" />
-            <StatCard label="Applications" value={stats.totalApplications} note="All incoming applications" />
-            <StatCard label="Pending Review" value={stats.pendingReviews} note="Needs decision" />
-            <StatCard
-              label="Profile"
-              value={profile.profileComplete ? "Ready" : "Incomplete"}
-              note="Complete brand + location details"
-            />
-          </section>
-
-          <Panel title="Recent Applications" note="Quick view of student pipeline">
-            {applications.length === 0 ? (
-              <EmptyState copy="No applications yet." />
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Student</th>
-                      <th>Course</th>
-                      <th>Status</th>
-                      <th>Documents</th>
-                      <th>Fit Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {applications.slice(0, 6).map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.student_name}</td>
-                        <td>{item.title}</td>
-                        <td><StatusPill status={item.status} /></td>
-                        <td>{item.document_count}</td>
-                        <td>{item.fit_score || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="cool-dash-panel">
+            <div className="cool-dash-panel-head">
+              <div>
+                <h2>{editingCourseId ? "Edit Course" : "Publish Course"}</h2>
+                <p className="cool-dash-panel-note">Fill in the details and publish your course listing.</p>
               </div>
-            )}
-          </Panel>
-
-          <Panel title="Publishing Checklist" note="Keep these complete for stronger conversion on the student catalog.">
-            <div className="checklist-grid">
-              <div className="check-card">
-                <StatusPill status={profileForm.universityName ? "ready" : "incomplete"} />
-                <strong>Institution identity</strong>
-              </div>
-              <div className="check-card">
-                <StatusPill status={profileForm.state && profileForm.city ? "ready" : "incomplete"} />
-                <strong>Location details</strong>
-              </div>
-              <div className="check-card">
-                <StatusPill status={profileForm.applicationBarLabel ? "ready" : "incomplete"} />
-                <strong>Application guidance bar</strong>
-              </div>
-              <div className="check-card">
-                <StatusPill status={courses.length ? "ready" : "incomplete"} />
-                <strong>Published courses</strong>
-              </div>
+              {editingCourseId ? (
+                <div className="cool-dash-panel-actions">
+                  <button
+                    type="button"
+                    className="cool-dash-btn-sm edit"
+                    onClick={() => {
+                      setEditingCourseId(null);
+                      setCourseForm(buildEmptyCourseForm());
+                    }}
+                  >
+                    Cancel Edit
+                  </button>
+                </div>
+              ) : null}
             </div>
-          </Panel>
-        </>
-      ) : null}
 
-      {page === "profile" ? (
-        <Panel title="University Identity" note="Set the public identity students see on the discovery page.">
-          <form className="form-grid" onSubmit={saveProfile}>
-            <div className="form-columns two">
-              <label>
-                Contact name
-                <input
-                  value={profileForm.fullName}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, fullName: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                University name
-                <input
-                  value={profileForm.universityName}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      universityName: event.target.value
-                    }))
-                  }
-                  required
-                />
-              </label>
-              <label>
-                Short name
-                <input
-                  value={profileForm.shortName}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, shortName: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Department
-                <select
-                  value={profileForm.departmentId}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      departmentId: event.target.value
-                    }))
-                  }
-                >
-                  <option value="">Select department</option>
-                  {departments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
+            <form className="cool-dash-form" onSubmit={saveCourse}>
+              <div className="cool-dash-info-banner">
+                <div className="cool-dash-info-banner-icon">📊</div>
+                <div>
+                  <h4>Dataset-aligned course upload</h4>
+                  <p>
+                    Publish one clean admissions row at a time: Category, Course Mode, College Name,
+                    State, City/Location, Course, Duration, Qualification Required, and Approx Fee (Total).
+                  </p>
+                </div>
+              </div>
+
+              {courseUploadWarnings.length ? (
+                <div className="cool-dash-warning">
+                  ⚠️ {courseUploadWarnings.join(" ")}
+                </div>
+              ) : null}
+
+              {!canPublishCourses ? (
+                <div className="cool-dash-warning">
+                  ⚠️ Save the institution name in the University Profile tab before publishing courses.
+                </div>
+              ) : null}
+
+              <div className="cool-dash-form-group">
+                <label>Category</label>
+                <div className="cool-dash-cat-pills">
+                  {COURSE_CATEGORY_OPTIONS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`cool-dash-cat-pill ${courseForm.category === option ? "active" : ""}`}
+                      onClick={() =>
+                        setCourseForm((current) => ({ ...current, category: option }))
+                      }
+                    >
+                      {option}
+                    </button>
                   ))}
-                </select>
-              </label>
-              <label>
-                State
-                <input
-                  value={profileForm.state}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, state: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                City
-                <input
-                  value={profileForm.city}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, city: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Contact email
-                <input
-                  value={profileForm.contactEmail}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      contactEmail: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Contact phone
-                <input
-                  value={profileForm.contactPhone}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      contactPhone: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Website
-                <input
-                  value={profileForm.websiteUrl}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({ ...current, websiteUrl: event.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Accreditation
-                <input
-                  value={profileForm.accreditation}
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      accreditation: event.target.value
-                    }))
-                  }
-                />
-              </label>
-            </div>
+                </div>
+              </div>
 
-            <label>
-              Address
-              <input
-                value={profileForm.addressLine}
-                onChange={(event) =>
-                  setProfileForm((current) => ({
-                    ...current,
-                    addressLine: event.target.value
-                  }))
-                }
-              />
-            </label>
-            <label>
-              Public description
-              <textarea
-                rows={4}
-                value={profileForm.description}
-                onChange={(event) =>
-                  setProfileForm((current) => ({
-                    ...current,
-                    description: event.target.value
-                  }))
-                }
-              />
-            </label>
-            <label>
-              Student-facing application bar text
-              <input
-                value={profileForm.applicationBarLabel}
-                onChange={(event) =>
-                  setProfileForm((current) => ({
-                    ...current,
-                    applicationBarLabel: event.target.value
-                  }))
-                }
-                placeholder="Upload marksheets, entrance score card, ID proof..."
-              />
-            </label>
-
-            <div className="asset-row">
-              <label className="asset-uploader">
-                <span>Upload logo</span>
-                <input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.webp,.pdf"
-                  onChange={(event) => uploadAsset("logoPath", event.target.files?.[0] || null)}
-                />
-              </label>
-              <label className="asset-uploader">
-                <span>Upload banner</span>
-                <input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.webp,.pdf"
-                  onChange={(event) => uploadAsset("bannerPath", event.target.files?.[0] || null)}
-                />
-              </label>
-            </div>
-
-            <div className="asset-preview-row">
-              {profileForm.logoPath ? (
-                <a className="text-link" href={toAssetUrl(profileForm.logoPath)} target="_blank" rel="noreferrer">
-                  Current logo
-                </a>
-              ) : null}
-              {profileForm.bannerPath ? (
-                <a className="text-link" href={toAssetUrl(profileForm.bannerPath)} target="_blank" rel="noreferrer">
-                  Current banner
-                </a>
-              ) : null}
-            </div>
-
-            <div className="panel-actions">
-              <button type="submit">Save University Profile</button>
-            </div>
-          </form>
-        </Panel>
-      ) : null}
-
-      {page === "courses" ? (
-        <>
-          <Panel
-            title={editingCourseId ? "Edit Course" : "Publish Course"}
-            note="Use dataset-style fields so students can compare universities cleanly."
-            actions={
-              editingCourseId ? (
-                <button
-                  type="button"
-                  className="outline-btn"
-                  onClick={() => {
-                    setEditingCourseId(null);
-                    setCourseForm(buildEmptyCourseForm());
-                  }}
-                >
-                  Cancel Edit
-                </button>
-              ) : null
-            }
-          >
-            <form className="form-grid" onSubmit={saveCourse}>
-              <div className="form-columns two">
-                <label>
-                  Course code
-                  <input
-                    value={courseForm.code}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({ ...current, code: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Course title
-                  <input
-                    value={courseForm.title}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({ ...current, title: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Category
-                  <input
-                    value={courseForm.category}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({ ...current, category: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Duration
-                  <input
-                    value={courseForm.durationLabel}
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>Type of course</label>
+                  <div className="cool-dash-mode-toggle">
+                    {COURSE_DELIVERY_MODE_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`cool-dash-mode-btn ${courseForm.deliveryMode === option.value ? "active" : ""}`}
+                        onClick={() =>
+                          setCourseForm((current) => ({
+                            ...current,
+                            deliveryMode: option.value
+                          }))
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Who can apply</label>
+                  <select
+                    value={courseForm.eligibleAcademicLevels}
                     onChange={(event) =>
                       setCourseForm((current) => ({
                         ...current,
-                        durationLabel: event.target.value
+                        eligibleAcademicLevels: event.target.value
                       }))
                     }
-                  />
-                </label>
-                <label>
-                  State
+                  >
+                    <option value="10">After Class 10</option>
+                    <option value="12">After Class 12</option>
+                    <option value="10,12">Both 10th and 12th</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>College Name / Institution</label>
+                  <input value={profileForm.universityName || profile.universityName || ""} readOnly style={{ opacity: 0.6 }} />
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>State</label>
                   <input
                     value={courseForm.locationState}
                     onChange={(event) =>
@@ -1408,10 +1305,14 @@ function UniversityDashboard({
                         locationState: event.target.value
                       }))
                     }
+                    required
                   />
-                </label>
-                <label>
-                  City
+                </div>
+              </div>
+
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>City / Location</label>
                   <input
                     value={courseForm.locationCity}
                     onChange={(event) =>
@@ -1420,79 +1321,40 @@ function UniversityDashboard({
                         locationCity: event.target.value
                       }))
                     }
+                    required
                   />
-                </label>
-                <label>
-                  Approx fee
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Course name</label>
                   <input
-                    value={courseForm.approxFeeTotal}
+                    list="university-course-name-options"
+                    value={courseForm.title}
+                    onChange={(event) =>
+                      setCourseForm((current) => ({ ...current, title: event.target.value }))
+                    }
+                    placeholder="Start typing to pick from options"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>Duration of course</label>
+                  <input
+                    value={courseForm.durationLabel}
                     onChange={(event) =>
                       setCourseForm((current) => ({
                         ...current,
-                        approxFeeTotal: event.target.value
+                        durationLabel: event.target.value
                       }))
                     }
+                    placeholder="4 Years, 3 Years, 5 Years..."
+                    required
                   />
-                </label>
-                <label>
-                  Deadline
-                  <input
-                    type="date"
-                    value={courseForm.applicationDeadline}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({
-                        ...current,
-                        applicationDeadline: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Seats
-                  <input
-                    type="number"
-                    min="1"
-                    value={courseForm.seatsTotal}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({
-                        ...current,
-                        seatsTotal: event.target.value
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Credits
-                  <input
-                    type="number"
-                    min="1"
-                    value={courseForm.credits}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({ ...current, credits: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Department
-                  <select
-                    value={courseForm.departmentId}
-                    onChange={(event) =>
-                      setCourseForm((current) => ({
-                        ...current,
-                        departmentId: event.target.value
-                      }))
-                    }
-                  >
-                    <option value="">Select department</option>
-                    {departments.map((department) => (
-                      <option key={department.id} value={department.id}>
-                        {department.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Qualification required
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Qualification Required</label>
                   <input
                     value={courseForm.qualificationRequired}
                     onChange={(event) =>
@@ -1501,109 +1363,248 @@ function UniversityDashboard({
                         qualificationRequired: event.target.value
                       }))
                     }
+                    placeholder="10+2 PCM 50%, KEAM"
                     required
                   />
-                </label>
+                </div>
               </div>
 
-              <label>
-                Schedule block
+              <div className="cool-dash-form-group">
+                <label>Approx Fee (Total)</label>
                 <input
-                  value={courseForm.scheduleBlock}
+                  value={courseForm.approxFeeTotal}
                   onChange={(event) =>
                     setCourseForm((current) => ({
                       ...current,
-                      scheduleBlock: event.target.value
+                      approxFeeTotal: event.target.value
                     }))
                   }
+                  placeholder="INR 2.8 Lakh total"
+                  required
                 />
-              </label>
-              <label>
-                Course description
-                <textarea
-                  rows={4}
-                  value={courseForm.description}
-                  onChange={(event) =>
-                    setCourseForm((current) => ({
-                      ...current,
-                      description: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Required documents guidance
-                <textarea
-                  rows={3}
-                  value={courseForm.requiredDocumentsIntro}
-                  onChange={(event) =>
-                    setCourseForm((current) => ({
-                      ...current,
-                      requiredDocumentsIntro: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <div className="asset-row">
-                <label className="asset-uploader">
-                  <span>Upload brochure / prospectus</span>
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png,.webp"
-                    onChange={(event) => uploadAsset("brochurePath", event.target.files?.[0] || null)}
-                  />
-                </label>
-                {courseForm.brochurePath ? (
-                  <a className="text-link" href={toAssetUrl(courseForm.brochurePath)} target="_blank" rel="noreferrer">
-                    Current brochure
-                  </a>
-                ) : null}
               </div>
 
-              <div className="panel-actions">
-                <button type="submit">{editingCourseId ? "Save Changes" : "Publish Course"}</button>
-              </div>
-            </form>
-          </Panel>
+              <datalist id="university-course-name-options">
+                {courseSuggestionOptions.map((option) => (
+                  <option key={option} value={option} />
+                ))}
+              </datalist>
 
-          <Panel title="Published Courses" note="Manage requirements and remove outdated listings.">
-            {courses.length === 0 ? (
-              <EmptyState copy="No published courses yet." />
-            ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Course</th>
-                      <th>Location</th>
-                      <th>Qualification</th>
-                      <th>Fee</th>
-                      <th>Requirements</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {courses.map((course) => (
-                      <tr key={course.id}>
-                        <td>
-                          <strong>{course.title}</strong>
-                          <span>{course.code}</span>
-                        </td>
-                        <td>{course.location_city}, {course.location_state}</td>
-                        <td>{course.qualification_required}</td>
-                        <td>{course.approx_fee_total}</td>
-                        <td>{course.requirement_count}</td>
-                        <td>
-                          <div className="row-actions">
+              {/* Suggested course names */}
+              <div className="cool-dash-form-group">
+                <label>Suggested course names</label>
+                <p style={{ fontSize: "0.8rem", color: "#64748b", marginBottom: "0.5rem" }}>
+                  Click a suggestion to autofill the course name.
+                </p>
+                {courseSuggestionGroups.length === 0 ? (
+                  <p style={{ fontSize: "0.85rem", color: "#475569", fontStyle: "italic" }}>No suggestions match the current filter.</p>
+                ) : (
+                  <div style={{ display: "grid", gap: "0.75rem" }}>
+                    {courseSuggestionGroups.map((group) => (
+                      <div key={group.label}>
+                        <p style={{ fontSize: "0.78rem", fontWeight: 700, color: "#818cf8", marginBottom: "0.4rem" }}>
+                          {group.label} — {group.total} matches
+                        </p>
+                        <div className="cool-dash-cat-pills">
+                          {group.options.map((option) => (
                             <button
+                              key={option}
                               type="button"
-                              className="outline-btn"
-                              onClick={() => {
-                                setEditingCourseId(course.id);
+                              className={`cool-dash-cat-pill ${courseForm.title === option ? "active" : ""}`}
+                              onClick={() => applySuggestedCourse(option, group.level)}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Required Documents */}
+              <div className="cool-dash-form-group">
+                <label>Required Documents</label>
+                <p style={{ fontSize: "0.8rem", color: "#64748b", marginBottom: "0.5rem" }}>
+                  Define what students must upload per course.
+                </p>
+                <div className="cool-dash-cat-pills" style={{ marginBottom: "0.75rem" }}>
+                  {["10th Marksheet", "12th Marksheet", "Certificate", "Entrance Exam Score", "ID Proof", "Statement of Purpose"].map((doc) => (
+                    <button
+                      key={doc}
+                      type="button"
+                      className="cool-dash-cat-pill"
+                      onClick={() => {
+                        if (!courseForm.requirements.some((r) => r.documentName === doc)) {
+                          setCourseForm((current) => ({
+                            ...current,
+                            requirements: [...current.requirements, { documentName: doc, instructions: "", isRequired: true }]
+                          }));
+                        }
+                      }}
+                    >
+                      + {doc}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="cool-dash-form-row" style={{ alignItems: "flex-end" }}>
+                  <div className="cool-dash-form-group">
+                    <input
+                      placeholder="Custom document name"
+                      value={draftRequirement.documentName}
+                      onChange={(event) =>
+                        setDraftRequirement((current) => ({
+                          ...current,
+                          documentName: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="cool-dash-form-group">
+                    <input
+                      placeholder="Instructions (optional)"
+                      value={draftRequirement.instructions}
+                      onChange={(event) =>
+                        setDraftRequirement((current) => ({
+                          ...current,
+                          instructions: event.target.value
+                        }))
+                      }
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="cool-dash-btn-sm edit"
+                    style={{ padding: "0.75rem 1.2rem", whiteSpace: "nowrap" }}
+                    onClick={() => {
+                      if (!draftRequirement.documentName) return;
+                      setCourseForm((current) => ({
+                        ...current,
+                        requirements: [...current.requirements, { ...draftRequirement }]
+                      }));
+                      setDraftRequirement({ documentName: "", instructions: "", isRequired: true });
+                    }}
+                  >
+                    Add Custom
+                  </button>
+                </div>
+
+                {courseForm.requirements.length > 0 && (
+                  <ul className="cool-dash-req-list" style={{ marginTop: "0.75rem" }}>
+                    {courseForm.requirements.map((req, index) => (
+                      <li key={index} className="cool-dash-req-item">
+                        <div>
+                          <strong style={{ color: "#e2e8f0", fontFamily: "Manrope, sans-serif", fontSize: "0.85rem" }}>{req.documentName}</strong>
+                          <small style={{ color: "#64748b", display: "block", marginTop: "0.1rem" }}>{req.instructions || "No instructions"}</small>
+                        </div>
+                        <button
+                          type="button"
+                          className="cool-dash-btn-sm delete"
+                          onClick={() => {
+                            setCourseForm((current) => ({
+                              ...current,
+                              requirements: current.requirements.filter((_, i) => i !== index)
+                            }));
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <button type="submit" className="cool-dash-submit" disabled={!canPublishCourses}>
+                {editingCourseId ? "Save Changes" : "🚀 Publish Course"}
+              </button>
+            </form>
+          </div>
+        </>
+      ) : null}
+
+      {page === "courses" ? (
+        <div className="cool-dash-panel">
+          <div className="cool-dash-panel-head">
+            <div>
+              <h2>Published Courses</h2>
+              <p className="cool-dash-panel-note">Courses uploaded by your institution</p>
+            </div>
+          </div>
+          {courses.length === 0 ? (
+            <div className="cool-dash-empty">
+              <div className="cool-dash-empty-icon">📚</div>
+              <h3>No courses published yet</h3>
+              <p>Head to the Publish tab to create your first course listing.</p>
+            </div>
+          ) : (
+            <div className="cool-dash-table-wrap">
+              <table className="cool-dash-table">
+                <thead>
+                  <tr>
+                    <th>Institution</th>
+                    <th>Category</th>
+                    <th>Mode</th>
+                    <th>Course</th>
+                    <th>State</th>
+                    <th>City</th>
+                    <th>Duration</th>
+                    <th>Qualification</th>
+                    <th>Eligibility</th>
+                    <th>Fee</th>
+                    <th>Apps</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courses.map((course) => (
+                    <tr key={course.id}>
+                      <td>
+                        <strong style={{ color: "#e2e8f0", fontFamily: "Manrope, sans-serif" }}>{course.university_name || "-"}</strong>
+                        <br />
+                        <span style={{ fontSize: "0.78em", color: "#64748b" }}>{course.institution_email || "-"}</span>
+                      </td>
+                      <td><span className="cool-dash-pill muted">{course.category || "-"}</span></td>
+                      <td>{formatDeliveryMode(course.delivery_mode)}</td>
+                      <td>
+                        <strong style={{ color: "#f1f5f9", fontFamily: "Manrope, sans-serif" }}>{course.title}</strong>
+                        <br />
+                        <span style={{ fontSize: "0.78em", color: "#818cf8" }}>{course.code}</span>
+                      </td>
+                      <td>{course.location_state || "-"}</td>
+                      <td>{course.location_city || "-"}</td>
+                      <td>{course.duration_label || "-"}</td>
+                      <td>{course.qualification_required}</td>
+                      <td>
+                        {formatEligibleAcademicLevels(course.eligible_academic_levels)}
+                        {course.minimum_score_percent ? ` | ${course.minimum_score_percent}%+` : ""}
+                      </td>
+                      <td>{course.approx_fee_total || "-"}</td>
+                      <td>{course.application_count || 0}</td>
+                      <td>
+                        <div className="cool-dash-row-actions">{/* Edit */}
+                          <button
+                            type="button"
+                            className="cool-dash-btn-sm edit"
+                            onClick={async () => {
+                              setPage("publish");
+                              setEditingCourseId(course.id);
+                                
+                                let existingReqs = [];
+                                try {
+                                  const reqResult = await api.courseRequirements(token, course.id);
+                                  existingReqs = reqResult.requirements || [];
+                                } catch (e) {
+                                  console.error("Failed to load requirements", e);
+                                }
+
                                 setCourseForm({
                                   code: course.code || "",
                                   title: course.title || "",
-                                  category: course.category || "Engineering",
+                                  category: course.category || "Technology",
+                                  deliveryMode: course.delivery_mode || "offline",
                                   description: course.description || "",
                                   credits: String(course.credits || 4),
                                   seatsTotal: String(course.seats_total || 40),
@@ -1614,31 +1615,32 @@ function UniversityDashboard({
                                   locationCity: course.location_city || "",
                                   durationLabel: course.duration_label || "4 Years",
                                   qualificationRequired: course.qualification_required || "",
+                                  eligibleAcademicLevels:
+                                    course.eligible_academic_levels || "10,12",
+                                  minimumScorePercent:
+                                    course.minimum_score_percent === null ||
+                                    course.minimum_score_percent === undefined
+                                      ? ""
+                                      : String(course.minimum_score_percent),
                                   approxFeeTotal: course.approx_fee_total || "",
                                   applicationDeadline: course.application_deadline
                                     ? String(course.application_deadline).slice(0, 10)
                                     : "",
                                   brochurePath: course.brochure_path || "",
-                                  requiredDocumentsIntro: course.required_documents_intro || ""
+                                  requiredDocumentsIntro: course.required_documents_intro || "",
+                                  requirements: existingReqs.map(r => ({ documentName: r.document_name, instructions: r.instructions, isRequired: Boolean(r.is_required) }))
                                 });
                               }}
                             >
                               Edit
                             </button>
-                            <button type="button" className="outline-btn" onClick={() => loadRequirements(course.id)}>
-                              Requirements
-                            </button>
                             <button
                               type="button"
-                              className="outline-btn"
+                              className="cool-dash-btn-sm delete"
                               onClick={async () => {
                                 try {
                                   await api.deleteUniversityCourse(token, course.id);
                                   onNotice("Course deleted.");
-                                  if (selectedCourseId === course.id) {
-                                    setSelectedCourseId(null);
-                                    setRequirements([]);
-                                  }
                                   await refresh();
                                 } catch (requestError) {
                                   onError(toMessage(requestError));
@@ -1655,75 +1657,8 @@ function UniversityDashboard({
                 </table>
               </div>
             )}
-          </Panel>
-
-          <Panel title="Required Documents" note="Define what students must upload per course.">
-            {!selectedCourseId ? (
-              <EmptyState copy="Select a course from the table above to manage requirements." />
-            ) : (
-              <>
-                <div className="detail-card">
-                  <h3>{courses.find((course) => course.id === selectedCourseId)?.title || "Selected course"}</h3>
-                  <p>Requirement builder for the student application page.</p>
-                </div>
-                <form className="upload-strip" onSubmit={addRequirement}>
-                  <input
-                    placeholder="Document name"
-                    value={requirementForm.documentName}
-                    onChange={(event) =>
-                      setRequirementForm((current) => ({
-                        ...current,
-                        documentName: event.target.value
-                      }))
-                    }
-                  />
-                  <input
-                    placeholder="Instructions"
-                    value={requirementForm.instructions}
-                    onChange={(event) =>
-                      setRequirementForm((current) => ({
-                        ...current,
-                        instructions: event.target.value
-                      }))
-                    }
-                  />
-                  <button type="submit">Add Requirement</button>
-                </form>
-
-                {requirements.length === 0 ? (
-                  <EmptyState copy="No requirements defined yet." />
-                ) : (
-                  <ul className="document-list top-gap">
-                    {requirements.map((requirement) => (
-                      <li key={requirement.id}>
-                        <div>
-                          <strong>{requirement.document_name}</strong>
-                          <span>{requirement.instructions || "No instructions"}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="outline-btn"
-                          onClick={async () => {
-                            try {
-                              await api.deleteCourseRequirement(token, requirement.id);
-                              onNotice("Requirement removed.");
-                              await loadRequirements(selectedCourseId);
-                            } catch (requestError) {
-                              onError(toMessage(requestError));
-                            }
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </Panel>
-        </>
-      ) : null}
+          </div>
+        ) : null}
 
       {page === "applications" ? (
         <>
@@ -1867,6 +1802,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
   const [students, setStudents] = useState([]);
   const [universities, setUniversities] = useState([]);
   const [catalog, setCatalog] = useState([]);
+  const [applicationQueue, setApplicationQueue] = useState([]);
   const [departmentReport, setDepartmentReport] = useState([]);
   const [popularCourses, setPopularCourses] = useState([]);
   const [trends, setTrends] = useState([]);
@@ -1879,11 +1815,11 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
   });
 
   const pages = [
-    { id: "overview", label: "Overview", note: "Users, notices, and current system state" },
-    { id: "accounts", label: "Accounts", note: "Students and universities" },
-    { id: "catalog", label: "Catalog", note: "Admissions inventory across universities" },
-    { id: "analytics", label: "Analytics", note: "Reports, demand, and trends" },
-    { id: "system", label: "System Controls", note: "Freeze state and announcements" }
+    { id: "overview", label: "Overview", note: "Users, notices, and current system state", icon: "📊" },
+    { id: "accounts", label: "Accounts", note: "Students and universities", icon: "👥" },
+    { id: "catalog", label: "Catalog", note: "Admissions inventory across universities", icon: "📚" },
+    { id: "analytics", label: "Analytics", note: "Reports, demand, and trends", icon: "📈" },
+    { id: "system", label: "System Controls", note: "Freeze state and announcements", icon: "⚙️" }
   ];
 
   const refresh = async () => {
@@ -1895,6 +1831,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
         universityResult,
         freezeResult,
         catalogResult,
+        applicationResult,
         departmentsResult,
         popularResult,
         trendsResult,
@@ -1904,7 +1841,8 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
         api.adminUsers(token, { role: "student" }),
         api.adminUsers(token, { role: "university" }),
         api.freezeStatus(token),
-        api.universityCourses(token),
+        api.adminCourses(token),
+        api.universityApplications(token),
         api.analyticsDepartments(token),
         api.analyticsPopular(token),
         api.analyticsTrends(token),
@@ -1916,6 +1854,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
       setUniversities(universityResult.users || []);
       setFreezeInfo(freezeResult);
       setCatalog(catalogResult.courses || []);
+      setApplicationQueue(applicationResult.applications || []);
       setDepartmentReport(departmentsResult.report || []);
       setPopularCourses(popularResult.courses || []);
       setTrends(trendsResult.trends || []);
@@ -1951,6 +1890,42 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
     }
   };
 
+  const incompleteUniversities = useMemo(
+    () => universities.filter((item) => !Number(item.profile_complete)),
+    [universities]
+  );
+  const listingsNeedingAttention = useMemo(
+    () =>
+      catalog.filter(
+        (course) =>
+          !course.application_deadline ||
+          !course.approx_fee_total ||
+          !course.eligible_academic_levels ||
+          !course.qualification_required
+      ),
+    [catalog]
+  );
+  const categoryDemand = useMemo(() => {
+    const grouped = new Map();
+
+    catalog.forEach((course) => {
+      const key = course.category || "Uncategorized";
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          category: key,
+          course_count: 0,
+          application_count: 0
+        });
+      }
+
+      const entry = grouped.get(key);
+      entry.course_count += 1;
+      entry.application_count += Number(course.application_count || 0);
+    });
+
+    return [...grouped.values()].sort((left, right) => right.application_count - left.application_count);
+  }, [catalog]);
+
   if (loading) {
     return <p className="loading-copy">Loading admin workspace...</p>;
   }
@@ -1970,25 +1945,77 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
           <section className="stat-grid">
             <StatCard label="Students" value={overview.students || 0} note="Registered applicants" />
             <StatCard label="Universities" value={overview.universities || 0} note="Publishing institutions" />
-            <StatCard label="Courses" value={overview.courses || 0} note="Visible in catalog" />
-            <StatCard label="Waitlisted" value={overview.waitlisted || 0} note="Legacy queue pressure" />
+            <StatCard label="Admissions Courses" value={overview.courses || 0} note="Visible in catalog" />
+            <StatCard label="Applications" value={overview.admissionsApplications || 0} note="Incoming admissions pipeline" />
           </section>
 
-          <Panel title="Account Mix" note="Quick check of adoption across roles.">
-            <div className="split-grid">
+          <Panel title="Admissions Health" note="Quick checks for listing quality and review operations.">
+            <div className="stat-grid">
               <div className="detail-card">
-                <h3>Students</h3>
-                <p>{students.length} accounts</p>
+                <h3>Ready university profiles</h3>
+                <p>{overview.readyUniversities || 0}</p>
               </div>
               <div className="detail-card">
-                <h3>Universities</h3>
-                <p>{universities.length} accounts</p>
+                <h3>Eligibility-ready listings</h3>
+                <p>{overview.admissionsReadyCourses || 0}</p>
+              </div>
+              <div className="detail-card">
+                <h3>Needs review</h3>
+                <p>{overview.listingsNeedingReview || listingsNeedingAttention.length}</p>
+              </div>
+              <div className="detail-card">
+                <h3>Review queue</h3>
+                <p>{overview.admissionsReviewQueue || 0}</p>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel title="Operational Watchlist" note="Fix these first to keep the university-side catalog healthy.">
+            <div className="split-grid">
+              <div className="detail-card">
+                <h3>Incomplete university onboarding</h3>
+                <p>{incompleteUniversities.length} universities still missing a complete public profile.</p>
+              </div>
+              <div className="detail-card">
+                <h3>Listings missing core fields</h3>
+                <p>{listingsNeedingAttention.length} courses are missing deadline, fee, eligibility, or qualification data.</p>
               </div>
               <div className="detail-card">
                 <h3>System state</h3>
                 <p>{freezeInfo.frozen ? "Registrations frozen" : "Registrations open"}</p>
               </div>
             </div>
+          </Panel>
+
+          <Panel title="Recent Review Queue" note="Applications that currently need admin attention across universities.">
+            {applicationQueue.length === 0 ? (
+              <EmptyState copy="No admissions applications are waiting in the queue." />
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Course</th>
+                      <th>Status</th>
+                      <th>Fit Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {applicationQueue.slice(0, 6).map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.student_name}</td>
+                        <td>{item.title}</td>
+                        <td>
+                          <StatusPill status={item.status} />
+                        </td>
+                        <td>{item.fit_score || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Panel>
 
           <Panel title="Recent Announcements" note="Latest notices sent across the platform.">
@@ -2040,6 +2067,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
                       <th>Year</th>
                       <th>CGPA</th>
                       <th>Department</th>
+                      <th>Profile</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2050,6 +2078,9 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
                         <td>{student.year_level}</td>
                         <td>{student.cgpa}</td>
                         <td>{student.department_name || "-"}</td>
+                        <td>
+                          <StatusPill status={Number(student.profile_complete) ? "ready" : "incomplete"} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -2066,16 +2097,28 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
                 <table>
                   <thead>
                     <tr>
+                      <th>University</th>
                       <th>Contact</th>
                       <th>Email</th>
+                      <th>Location</th>
+                      <th>Courses</th>
+                      <th>Profile</th>
                       <th>Department</th>
                     </tr>
                   </thead>
                   <tbody>
                     {universities.map((university) => (
                       <tr key={university.id}>
+                        <td>{university.university_name || "-"}</td>
                         <td>{university.full_name}</td>
                         <td>{university.email}</td>
+                        <td>
+                          {university.university_city || "-"}, {university.university_state || "-"}
+                        </td>
+                        <td>{university.course_count || 0}</td>
+                        <td>
+                          <StatusPill status={Number(university.profile_complete) ? "ready" : "incomplete"} />
+                        </td>
                         <td>{university.department_name || "-"}</td>
                       </tr>
                     ))}
@@ -2088,7 +2131,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
       ) : null}
 
       {page === "catalog" ? (
-        <Panel title="Admissions Catalog" note="Cross-university course inventory and live demand.">
+        <Panel title="Admissions Catalog" note="Dataset-style course inventory across all universities.">
           {catalog.length === 0 ? (
             <EmptyState copy="No courses are currently published." />
           ) : (
@@ -2097,9 +2140,14 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
                 <thead>
                   <tr>
                     <th>University</th>
-                    <th>Course</th>
                     <th>Category</th>
-                    <th>Location</th>
+                    <th>Course</th>
+                    <th>State</th>
+                    <th>City/Location</th>
+                    <th>Duration</th>
+                    <th>Qualification</th>
+                    <th>Eligibility</th>
+                    <th>Fee</th>
                     <th>Deadline</th>
                     <th>Applicants</th>
                   </tr>
@@ -2108,12 +2156,20 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
                   {catalog.map((course) => (
                     <tr key={course.id}>
                       <td>{course.university_name || "-"}</td>
+                      <td>{course.category || "-"}</td>
                       <td>
                         <strong>{course.title}</strong>
                         <span>{course.code}</span>
                       </td>
-                      <td>{course.category}</td>
-                      <td>{course.location_city || "-"}, {course.location_state || "-"}</td>
+                      <td>{course.location_state || "-"}</td>
+                      <td>{course.location_city || "-"}</td>
+                      <td>{course.duration_label || "-"}</td>
+                      <td>{course.qualification_required || "-"}</td>
+                      <td>
+                        {formatEligibleAcademicLevels(course.eligible_academic_levels)}
+                        {course.minimum_score_percent ? ` | ${course.minimum_score_percent}%+` : ""}
+                      </td>
+                      <td>{course.approx_fee_total || "-"}</td>
                       <td>{formatDate(course.application_deadline)}</td>
                       <td>{course.application_count || 0}</td>
                     </tr>
@@ -2143,12 +2199,12 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
           >
             <div className="split-grid">
               <div className="detail-card">
-                <h3>Popular courses</h3>
-                <p>{popularCourses.length} courses in the leaderboard</p>
+                <h3>Application leaderboard</h3>
+                <p>{popularCourses.length} courses in the demand ranking</p>
               </div>
               <div className="detail-card">
                 <h3>Department rows</h3>
-                <p>{departmentReport.length} departments in analytics</p>
+                <p>{departmentReport.length} departments in admissions analytics</p>
               </div>
               <div className="detail-card">
                 <h3>Trend periods</h3>
@@ -2157,14 +2213,14 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
             </div>
           </Panel>
 
-          <Panel title="Department Report" note="Department-wise course and enrollment activity.">
+          <Panel title="Department Report" note="Department-wise course supply and application demand.">
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Department</th>
                     <th>Courses</th>
-                    <th>Active Enrollments</th>
+                    <th>Applications</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2172,7 +2228,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
                     <tr key={item.id}>
                       <td>{item.name}</td>
                       <td>{item.course_count}</td>
-                      <td>{item.active_enrollments}</td>
+                      <td>{item.application_count}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2180,27 +2236,54 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
             </div>
           </Panel>
 
-          <Panel title="Most Popular Courses" note="Current demand snapshot across the legacy registration engine.">
+          <Panel title="Category Demand" note="Which categories students are responding to most.">
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
+                    <th>Category</th>
+                    <th>Courses</th>
+                    <th>Applications</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categoryDemand.map((item) => (
+                    <tr key={item.category}>
+                      <td>{item.category}</td>
+                      <td>{item.course_count}</td>
+                      <td>{item.application_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          <Panel title="Most Popular Courses" note="Current demand snapshot across the admissions pipeline.">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>University</th>
                     <th>Course</th>
-                    <th>Active Enrollments</th>
-                    <th>Waitlist</th>
-                    <th>Rating</th>
+                    <th>Applications</th>
+                    <th>Review Queue</th>
+                    <th>Accepted</th>
+                    <th>Avg Fit Score</th>
                   </tr>
                 </thead>
                 <tbody>
                   {popularCourses.map((item) => (
                     <tr key={item.id}>
+                      <td>{item.university_name || "-"}</td>
                       <td>
                         <strong>{item.title}</strong>
                         <span>{item.code}</span>
                       </td>
-                      <td>{item.active_enrollments}</td>
-                      <td>{item.waitlist_count}</td>
-                      <td>{item.avg_rating}</td>
+                      <td>{item.application_count}</td>
+                      <td>{item.review_queue}</td>
+                      <td>{item.accepted_count}</td>
+                      <td>{item.avg_fit_score}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2208,22 +2291,24 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
             </div>
           </Panel>
 
-          <Panel title="Monthly Trends" note="Registration and waitlist movement by month.">
+          <Panel title="Monthly Trends" note="Application, review, and acceptance movement by month.">
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>Month</th>
-                    <th>Registrations</th>
-                    <th>Waitlisted</th>
+                    <th>Applications</th>
+                    <th>Under Review</th>
+                    <th>Accepted</th>
                   </tr>
                 </thead>
                 <tbody>
                   {trends.map((item) => (
                     <tr key={item.month}>
                       <td>{item.month}</td>
-                      <td>{item.registrations}</td>
-                      <td>{item.waitlisted}</td>
+                      <td>{item.applications}</td>
+                      <td>{item.under_review}</td>
+                      <td>{item.accepted}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2237,7 +2322,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
         <>
           <Panel
             title="System Controls"
-            note="Platform-wide controls for the legacy registration engine."
+            note="Platform-wide controls for the admissions workflow."
             actions={
               <button
                 type="button"
@@ -2363,7 +2448,7 @@ function AdminDashboard({ token, profile, onError, onNotice, onLogout, error, no
   );
 }
 
-export default function DashboardPage({ token, currentUser, onLogout }) {
+export default function DashboardPage({ token, currentUser, onLogout, onSessionUserUpdate }) {
   const [profile, setProfile] = useState(currentUser || null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -2388,24 +2473,31 @@ export default function DashboardPage({ token, currentUser, onLogout }) {
     setNotice(message);
   };
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      setLoading(true);
-      try {
-        const result = await api.me(token);
-        setProfile(result.user);
-      } catch (requestError) {
-        if (requestError.message.toLowerCase().includes("session")) {
-          onLogout();
-        } else {
-          pushError(toMessage(requestError));
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+  const syncProfile = (nextUser) => {
+    setProfile(nextUser);
+    onSessionUserUpdate?.(nextUser);
+  };
 
+  const loadProfile = async () => {
+    setLoading(true);
+    try {
+      const result = await api.me(token);
+      syncProfile(result.user);
+    } catch (requestError) {
+      if (requestError.message.toLowerCase().includes("session")) {
+        onLogout();
+      } else {
+        pushError(toMessage(requestError));
+        setProfile(currentUser || null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, onLogout]);
 
   const handleLogout = async () => {
@@ -2422,7 +2514,27 @@ export default function DashboardPage({ token, currentUser, onLogout }) {
   }
 
   if (!profile) {
-    return <p className="loading-copy">Session expired.</p>;
+    return (
+      <main className="auth-shell">
+        <section className="panel dashboard-fallback">
+          <div className="panel-head">
+            <div>
+              <p className="brand-kicker">EduVista</p>
+              <h2>Dashboard unavailable</h2>
+              <p className="panel-note">{error || "We could not load your account right now."}</p>
+            </div>
+          </div>
+          <div className="panel-actions">
+            <button type="button" onClick={loadProfile}>
+              Retry
+            </button>
+            <button type="button" className="outline-btn" onClick={handleLogout}>
+              Back to login
+            </button>
+          </div>
+        </section>
+      </main>
+    );
   }
 
   if (profile.role === "student") {
@@ -2434,8 +2546,8 @@ export default function DashboardPage({ token, currentUser, onLogout }) {
         onNotice={pushNotice}
         onLogout={handleLogout}
         error={error}
-        notice={notice}
-        onProfileUpdate={setProfile}
+      notice={notice}
+      onProfileUpdate={syncProfile}
       />
     );
   }
@@ -2450,7 +2562,7 @@ export default function DashboardPage({ token, currentUser, onLogout }) {
         onLogout={handleLogout}
         error={error}
         notice={notice}
-        onProfileUpdate={setProfile}
+        onProfileUpdate={syncProfile}
       />
     );
   }

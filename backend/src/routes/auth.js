@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import "../env.js";
 import pool from "../db.js";
 import { createUploader, toPublicUploadPath } from "../middleware/upload.js";
+import { buildUniversityProfileComplete } from "../utils/admissions.js";
 import {
   issueAuthToken,
   requireAuth,
@@ -112,7 +113,7 @@ router.get("/signup-meta", async (_req, res, next) => {
     );
     return res.json({
       departments,
-      accountTypes: ["student"],
+      accountTypes: ["student", "university"],
       academicLevels: ["10", "12"]
     });
   } catch (error) {
@@ -276,26 +277,10 @@ router.post("/signup", async (req, res, next) => {
 
 router.post("/login", async (req, res, next) => {
   try {
-    const { email, password, captchaId, captchaAnswer } = req.body;
+    const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password are required." });
-    }
-
-    if (!captchaId || captchaAnswer === undefined || captchaAnswer === null) {
-      return res.status(400).json({ error: "CAPTCHA verification is required." });
-    }
-
-    const captcha = readCaptchaPayload(captchaId);
-    if (!captcha) {
-      return res.status(401).json({ error: "CAPTCHA expired. Please refresh and try again." });
-    }
-
-    const expectedAnswer =
-      captcha.op === "+" ? Number(captcha.a) + Number(captcha.b) : Number(captcha.a) - Number(captcha.b);
-
-    if (String(expectedAnswer) !== String(captchaAnswer).trim()) {
-      return res.status(401).json({ error: "Invalid CAPTCHA answer." });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -314,6 +299,9 @@ router.post("/login", async (req, res, next) => {
               up.university_name,
               up.city AS university_city,
               up.state AS university_state,
+              up.contact_email AS university_contact_email,
+              up.contact_phone AS university_contact_phone,
+              up.description AS university_description,
               (
                 SELECT COUNT(*)
                 FROM student_profile_documents spd
@@ -366,7 +354,7 @@ router.post("/login", async (req, res, next) => {
           user.role === "student"
             ? buildStudentProfileComplete(user)
             : user.role === "university"
-              ? Boolean(user.university_name && user.university_city && user.university_state)
+              ? buildUniversityProfileComplete(user)
               : true
       }
     });
@@ -402,6 +390,9 @@ router.get("/me", requireAuth, async (req, res, next) => {
               up.university_name,
               up.city AS university_city,
               up.state AS university_state,
+              up.contact_email AS university_contact_email,
+              up.contact_phone AS university_contact_phone,
+              up.description AS university_description,
               up.logo_path,
               up.banner_path,
               (
@@ -443,7 +434,7 @@ router.get("/me", requireAuth, async (req, res, next) => {
           user.role === "student"
             ? buildStudentProfileComplete(user)
             : user.role === "university"
-              ? Boolean(user.university_name && user.university_city && user.university_state)
+              ? buildUniversityProfileComplete(user)
               : true,
         logoPath: user.logo_path || null,
         bannerPath: user.banner_path || null

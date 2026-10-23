@@ -8,12 +8,8 @@ const API_ORIGIN = (import.meta.env.VITE_API_URL || "http://localhost:4000/api")
 );
 
 const toAssetUrl = (filePath) => {
-  if (!filePath) {
-    return "";
-  }
-  if (filePath.startsWith("http")) {
-    return filePath;
-  }
+  if (!filePath) return "";
+  if (filePath.startsWith("http")) return filePath;
   return `${API_ORIGIN}${filePath}`;
 };
 
@@ -23,6 +19,16 @@ const DOCUMENT_TYPES = [
   { value: "id_proof", label: "ID Proof" },
   { value: "transfer_certificate", label: "Transfer Certificate" },
   { value: "other", label: "Other" }
+];
+
+const INDIAN_STATES = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
+  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
+  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
+  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
 ];
 
 export default function StudentProfileSetupPage({
@@ -39,6 +45,7 @@ export default function StudentProfileSetupPage({
   const [notice, setNotice] = useState("");
   const [documents, setDocuments] = useState([]);
   const [profileReady, setProfileReady] = useState(Boolean(currentUser?.profileComplete));
+  const [step, setStep] = useState(1); // 1 = Personal, 2 = Academic, 3 = Documents
   const [form, setForm] = useState({
     fullName: "",
     academicLevel: currentUser?.academicLevel || "12",
@@ -65,18 +72,20 @@ export default function StudentProfileSetupPage({
     file: null
   });
 
-  const checklist = useMemo(
-    () => [
-      { label: "Student phone", done: Boolean(form.phone) },
-      { label: "Parent phone", done: Boolean(form.guardianPhone) },
-      { label: "Academic level", done: Boolean(form.academicLevel) },
-      { label: "Board and school", done: Boolean(form.boardName && form.schoolName) },
-      { label: "Score / percentage", done: Boolean(form.scorePercent) },
-      { label: "Location", done: Boolean(form.city && form.state) },
-      { label: "Academic document", done: documents.length > 0 }
-    ],
-    [documents.length, form]
-  );
+  const completionPercent = useMemo(() => {
+    const checks = [
+      Boolean(form.fullName),
+      Boolean(form.phone),
+      Boolean(form.guardianPhone),
+      Boolean(form.academicLevel),
+      Boolean(form.schoolName),
+      Boolean(form.boardName),
+      Boolean(form.city && form.state),
+      Boolean(form.scorePercent),
+      documents.length > 0
+    ];
+    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+  }, [form, documents.length]);
 
   const loadProfile = async () => {
     setLoading(true);
@@ -87,11 +96,9 @@ export default function StudentProfileSetupPage({
       setDocuments(profileResult.documents || []);
       setForm({
         fullName: profileResult.profile?.full_name || meResult.user.name || "",
-        academicLevel:
-          profileResult.profile?.academic_level || meResult.user.academicLevel || "12",
+        academicLevel: profileResult.profile?.academic_level || meResult.user.academicLevel || "12",
         phone: profileResult.profile?.phone || meResult.user.phone || "",
-        guardianPhone:
-          profileResult.profile?.guardian_phone || meResult.user.guardianPhone || "",
+        guardianPhone: profileResult.profile?.guardian_phone || meResult.user.guardianPhone || "",
         guardianName: profileResult.profile?.guardian_name || "",
         dateOfBirth: profileResult.profile?.date_of_birth || "",
         gender: profileResult.profile?.gender || "",
@@ -104,7 +111,7 @@ export default function StudentProfileSetupPage({
         passingYear: String(profileResult.profile?.passing_year || ""),
         scorePercent:
           profileResult.profile?.score_percent === null ||
-            profileResult.profile?.score_percent === undefined
+          profileResult.profile?.score_percent === undefined
             ? ""
             : String(profileResult.profile?.score_percent),
         examRollNo: profileResult.profile?.exam_roll_no || "",
@@ -126,30 +133,32 @@ export default function StudentProfileSetupPage({
   }, [token]);
 
   useEffect(() => {
-    if (!notice) {
-      return undefined;
-    }
-
-    const timeout = window.setTimeout(() => setNotice(""), 3000);
+    if (!notice) return undefined;
+    const timeout = window.setTimeout(() => setNotice(""), 4000);
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
+  useEffect(() => {
+    if (!error) return undefined;
+    const timeout = window.setTimeout(() => setError(""), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [error]);
+
   const saveProfile = async (event) => {
-    event.preventDefault();
+    if (event) event.preventDefault();
     setSaving(true);
     setError("");
-
     try {
       await api.updateProfile(token, form);
       const meResult = await api.me(token);
       onSessionUserUpdate(meResult.user);
-      setProfileReady(Boolean(meResult.user.profileComplete));
-      setNotice("Profile saved.");
-      if (meResult.user.profileComplete) {
-        navigate("/dashboard", { replace: true });
-      }
+      const isComplete = Boolean(meResult.user.profileComplete);
+      setProfileReady(isComplete);
+      setNotice("Profile saved successfully!");
+      return isComplete;
     } catch (requestError) {
       setError(requestError.message || "Unable to save profile.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -161,7 +170,6 @@ export default function StudentProfileSetupPage({
       setError("Choose a file before uploading.");
       return;
     }
-
     setUploading(true);
     setError("");
     try {
@@ -172,7 +180,7 @@ export default function StudentProfileSetupPage({
       });
       setUploadForm({ documentType: "marksheet", file: null });
       await loadProfile();
-      setNotice("Document uploaded.");
+      setNotice("Document uploaded successfully!");
     } catch (requestError) {
       setError(requestError.message || "Unable to upload document.");
     } finally {
@@ -191,341 +199,491 @@ export default function StudentProfileSetupPage({
   };
 
   if (loading) {
-    return <p className="loading-copy">Preparing profile setup...</p>;
+    return (
+      <div className="cool-auth-bg">
+        <div className="cool-auth-orb cool-auth-orb-1" />
+        <div className="cool-auth-orb cool-auth-orb-2" />
+        <div className="cool-auth-orb cool-auth-orb-3" />
+        <p style={{ color: "#94a3b8", textAlign: "center", paddingTop: "40vh", fontSize: "1.1rem" }}>
+          Preparing your profile...
+        </p>
+      </div>
+    );
   }
 
+  const steps = [
+    { num: 1, label: "Personal" },
+    { num: 2, label: "Academic" },
+    { num: 3, label: "Documents" }
+  ];
+
   return (
-    <main className="profile-setup-shell">
-      <section className="profile-setup-panel">
-        <div className="profile-setup-head">
-          <div>
-            <p className="brand-kicker">Student Onboarding</p>
-            <h1>Complete your academic profile before opening the dashboard.</h1>
-            <p className="landing-subtitle">
-              This platform is for 10th and 12th students. Add your academic details and upload
-              at least one supporting document so course suggestions and registrations are based on
-              real profile data.
-            </p>
+    <div className="cool-auth-bg">
+      <div className="cool-auth-orb cool-auth-orb-1" />
+      <div className="cool-auth-orb cool-auth-orb-2" />
+      <div className="cool-auth-orb cool-auth-orb-3" />
+
+      {/* Toast notifications */}
+      <div className="cool-toast-container">
+        {error ? (
+          <div className="cool-toast error">
+            <div className="cool-toast-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+            </div>
+            {error}
           </div>
-          <div className="profile-setup-actions">
-            <button type="button" className="outline-btn" onClick={onLogout}>
+        ) : null}
+        {notice ? (
+          <div className="cool-toast success">
+            <div className="cool-toast-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+            </div>
+            {notice}
+          </div>
+        ) : null}
+      </div>
+
+      <main style={{
+        position: "relative", zIndex: 1,
+        maxWidth: 720, margin: "0 auto",
+        padding: "2rem 1.5rem 4rem",
+        minHeight: "100vh"
+      }}>
+        {/* Header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          marginBottom: "2rem"
+        }}>
+          <div>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: "0.5rem",
+              fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.1em",
+              textTransform: "uppercase", color: "#818cf8", marginBottom: "0.3rem"
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: "linear-gradient(135deg, #6366f1, #8b5cf6)"
+              }} />
+              Student Onboarding
+            </div>
+            <h1 style={{
+              fontFamily: "'Cormorant Garamond', serif", fontSize: "2rem",
+              fontWeight: 700, color: "#f8fafc", margin: 0, lineHeight: 1.2
+            }}>
+              Complete your profile
+            </h1>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              type="button"
+              onClick={onLogout}
+              style={{
+                all: "unset", cursor: "pointer", padding: "0.5rem 1rem",
+                borderRadius: "0.65rem", fontSize: "0.82rem", fontWeight: 700,
+                color: "#94a3b8", background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)", transition: "all 0.2s"
+              }}
+            >
               Logout
             </button>
             <button
               type="button"
-              disabled={!profileReady}
-              onClick={() => navigate("/dashboard", { replace: true })}
+              disabled={!profileReady && completionPercent !== 100}
+              onClick={async () => {
+                const complete = await saveProfile();
+                if (complete) navigate("/dashboard", { replace: true });
+              }}
+              style={{
+                all: "unset", cursor: (profileReady || completionPercent === 100) ? "pointer" : "not-allowed",
+                padding: "0.5rem 1.2rem", borderRadius: "0.65rem",
+                fontSize: "0.82rem", fontWeight: 700, color: "#fff",
+                background: (profileReady || completionPercent === 100)
+                  ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
+                  : "rgba(99,102,241,0.3)",
+                opacity: (profileReady || completionPercent === 100) ? 1 : 0.5, transition: "all 0.2s"
+              }}
             >
-              Continue to Dashboard
+              Open Dashboard →
             </button>
           </div>
         </div>
 
-        {error ? <p className="banner error">{error}</p> : null}
-        {notice ? <p className="banner success">{notice}</p> : null}
+        {/* Progress bar */}
+        <div style={{
+          padding: "1.25rem 1.5rem", borderRadius: "1rem",
+          background: "rgba(15,23,42,0.6)", backdropFilter: "blur(12px)",
+          border: "1px solid rgba(255,255,255,0.06)", marginBottom: "1.5rem"
+        }}>
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            marginBottom: "0.6rem"
+          }}>
+            <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#cbd5e1" }}>
+              Profile completion
+            </span>
+            <span style={{
+              fontSize: "0.82rem", fontWeight: 800,
+              color: completionPercent === 100 ? "#34d399" : "#818cf8"
+            }}>
+              {completionPercent}%
+            </span>
+          </div>
+          <div style={{
+            height: 6, borderRadius: 99, background: "rgba(255,255,255,0.06)",
+            overflow: "hidden"
+          }}>
+            <div style={{
+              height: "100%", borderRadius: 99,
+              width: `${completionPercent}%`,
+              background: completionPercent === 100
+                ? "linear-gradient(90deg, #10b981, #34d399)"
+                : "linear-gradient(90deg, #6366f1, #8b5cf6)",
+              transition: "width 0.5s ease"
+            }} />
+          </div>
+        </div>
 
-        <div className="checklist-grid">
-          {checklist.map((item) => (
-            <article key={item.label} className="check-card">
-              <span className={`status-pill ${item.done ? "ok" : "warn"}`}>
-                {item.done ? "ready" : "missing"}
+        {/* Step tabs */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem",
+          marginBottom: "1.5rem"
+        }}>
+          {steps.map((s) => (
+            <button
+              key={s.num}
+              type="button"
+              onClick={() => setStep(s.num)}
+              style={{
+                all: "unset", cursor: "pointer", textAlign: "center",
+                padding: "0.75rem 0.5rem", borderRadius: "0.85rem",
+                fontSize: "0.88rem", fontWeight: 700,
+                color: step === s.num ? "#f1f5f9" : "#64748b",
+                background: step === s.num
+                  ? "linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.12))"
+                  : "rgba(255,255,255,0.03)",
+                border: `1px solid ${step === s.num ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.06)"}`,
+                transition: "all 0.25s ease"
+              }}
+            >
+              <span style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22, borderRadius: "50%", marginRight: "0.4rem",
+                fontSize: "0.72rem", fontWeight: 800,
+                background: step === s.num ? "rgba(99,102,241,0.3)" : "rgba(255,255,255,0.06)",
+                color: step === s.num ? "#c7d2fe" : "#64748b"
+              }}>
+                {s.num}
               </span>
-              <strong>{item.label}</strong>
-            </article>
+              {s.label}
+            </button>
           ))}
         </div>
 
-        <form className="panel top-gap" onSubmit={saveProfile}>
-          <div className="panel-head">
-            <div>
-              <h2>Profile Details</h2>
-              <p className="panel-note">
-                Save your personal and academic details. The dashboard is unlocked when the core
-                fields and at least one document are available.
-              </p>
+        {/* Step 1: Personal Info */}
+        {step === 1 && (
+          <div style={{
+            padding: "1.5rem", borderRadius: "1.2rem",
+            background: "rgba(15,23,42,0.6)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.06)"
+          }}>
+            <h2 style={{
+              fontFamily: "'Cormorant Garamond', serif", fontSize: "1.5rem",
+              color: "#f1f5f9", margin: "0 0 0.3rem"
+            }}>
+              Personal Information
+            </h2>
+            <p style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: "1.25rem" }}>
+              Basic details for your student profile.
+            </p>
+
+            <div className="cool-dash-form">
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>Full name *</label>
+                  <input value={form.fullName} onChange={(e) => setForm(c => ({ ...c, fullName: e.target.value }))} required />
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Academic level *</label>
+                  <select value={form.academicLevel} onChange={(e) => setForm(c => ({ ...c, academicLevel: e.target.value }))}>
+                    <option value="10">10th</option>
+                    <option value="12">12th</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>Student phone *</label>
+                  <input value={form.phone} onChange={(e) => setForm(c => ({ ...c, phone: e.target.value }))} required />
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Parent phone *</label>
+                  <input value={form.guardianPhone} onChange={(e) => setForm(c => ({ ...c, guardianPhone: e.target.value }))} required />
+                </div>
+              </div>
+
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>City *</label>
+                  <input value={form.city} onChange={(e) => setForm(c => ({ ...c, city: e.target.value }))} required />
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>State *</label>
+                  <select value={form.state} onChange={(e) => setForm(c => ({ ...c, state: e.target.value }))} required>
+                    <option value="">Select state</option>
+                    {INDIAN_STATES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: "0.5rem", gap: "0.75rem" }}>
+                <button
+                  type="button"
+                  onClick={saveProfile}
+                  disabled={saving}
+                  className="cool-dash-submit"
+                  style={{ width: "auto", padding: "0.7rem 2rem", background: "rgba(99, 102, 241, 0.2)", color: "#818cf8", boxShadow: "none" }}
+                >
+                  {saving ? "Saving..." : "💾 Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await saveProfile();
+                    setStep(2);
+                  }}
+                  className="cool-dash-submit"
+                  style={{ width: "auto", padding: "0.7rem 2rem" }}
+                >
+                  Next: Academic Details →
+                </button>
+              </div>
             </div>
           </div>
+        )}
 
-          <div className="form-columns two">
-            <label>
-              Full name
-              <input
-                value={form.fullName}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, fullName: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Academic level
-              <select
-                value={form.academicLevel}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, academicLevel: event.target.value }))
-                }
+        {/* Step 2: Academic Info */}
+        {step === 2 && (
+          <div style={{
+            padding: "1.5rem", borderRadius: "1.2rem",
+            background: "rgba(15,23,42,0.6)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.06)"
+          }}>
+            <h2 style={{
+              fontFamily: "'Cormorant Garamond', serif", fontSize: "1.5rem",
+              color: "#f1f5f9", margin: "0 0 0.3rem"
+            }}>
+              Academic Details
+            </h2>
+            <p style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: "1.25rem" }}>
+              School and exam information for course matching.
+            </p>
+
+            <form className="cool-dash-form" onSubmit={saveProfile}>
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>School name *</label>
+                  <input value={form.schoolName} onChange={(e) => setForm(c => ({ ...c, schoolName: e.target.value }))} required />
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Board *</label>
+                  <input value={form.boardName} onChange={(e) => setForm(c => ({ ...c, boardName: e.target.value }))} placeholder="CBSE, State Board, ICSE..." required />
+                </div>
+              </div>
+
+              <div className="cool-dash-form-row">
+                <div className="cool-dash-form-group">
+                  <label>Percentage / Score *</label>
+                  <input type="number" min="0" max="100" step="0.01" value={form.scorePercent} onChange={(e) => setForm(c => ({ ...c, scorePercent: e.target.value }))} required />
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>Stream</label>
+                  <input value={form.streamName} onChange={(e) => setForm(c => ({ ...c, streamName: e.target.value }))} placeholder="Science, Commerce, Humanities..." />
+                </div>
+              </div>
+
+              <div className="cool-dash-form-group">
+                <label>Marks summary</label>
+                <textarea rows={2} value={form.marksSummary} onChange={(e) => setForm(c => ({ ...c, marksSummary: e.target.value }))} placeholder="e.g. PCM 92%, Biology 88%, entrance rank 3210" />
+              </div>
+
+              <div className="cool-dash-form-group">
+                <label>Course interest</label>
+                <input value={form.targetCourse} onChange={(e) => setForm(c => ({ ...c, targetCourse: e.target.value }))} placeholder="Engineering, Medicine, Commerce..." />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "0.5rem", gap: "0.75rem" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await saveProfile();
+                    setStep(1);
+                  }}
+                  style={{
+                    all: "unset", cursor: "pointer", padding: "0.7rem 1.5rem",
+                    borderRadius: "0.85rem", fontSize: "0.88rem", fontWeight: 700,
+                    color: "#94a3b8", background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.1)"
+                  }}
+                >
+                  ← Back
+                </button>
+                <div style={{ display: "flex", gap: "0.75rem" }}>
+                  <button type="submit" disabled={saving} className="cool-dash-submit" style={{ width: "auto", padding: "0.7rem 2rem", background: "rgba(99, 102, 241, 0.2)", color: "#818cf8", boxShadow: "none" }}>
+                    {saving ? "Saving..." : "💾 Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await saveProfile();
+                      setStep(3);
+                    }}
+                    className="cool-dash-submit"
+                    style={{ width: "auto", padding: "0.7rem 2rem" }}
+                  >
+                    Next: Documents →
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Step 3: Documents */}
+        {step === 3 && (
+          <div style={{
+            padding: "1.5rem", borderRadius: "1.2rem",
+            background: "rgba(15,23,42,0.6)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.06)"
+          }}>
+            <h2 style={{
+              fontFamily: "'Cormorant Garamond', serif", fontSize: "1.5rem",
+              color: "#f1f5f9", margin: "0 0 0.3rem"
+            }}>
+              Academic Documents
+            </h2>
+            <p style={{ fontSize: "0.82rem", color: "#64748b", marginBottom: "1.25rem" }}>
+              Upload at least one 10th or 12th supporting document. PDF, JPG, PNG, and WEBP accepted.
+            </p>
+
+            <form className="cool-dash-form" onSubmit={uploadDocument}>
+              <div className="cool-dash-form-row" style={{ alignItems: "flex-end" }}>
+                <div className="cool-dash-form-group">
+                  <label>Document type</label>
+                  <select
+                    value={uploadForm.documentType}
+                    onChange={(e) => setUploadForm(c => ({ ...c, documentType: e.target.value }))}
+                  >
+                    {DOCUMENT_TYPES.map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="cool-dash-form-group">
+                  <label>File</label>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.webp"
+                    onChange={(e) => setUploadForm(c => ({ ...c, file: e.target.files?.[0] || null }))}
+                    style={{ padding: "0.55rem 0.9rem" }}
+                  />
+                </div>
+              </div>
+              <button type="submit" disabled={uploading} className="cool-dash-submit">
+                {uploading ? "Uploading..." : "📄 Upload Document"}
+              </button>
+            </form>
+
+            {/* Uploaded documents list */}
+            {documents.length === 0 ? (
+              <div style={{
+                textAlign: "center", padding: "2rem", color: "#64748b", fontSize: "0.88rem",
+                marginTop: "1rem"
+              }}>
+                <span style={{ fontSize: "2rem", display: "block", marginBottom: "0.5rem" }}>📁</span>
+                No documents uploaded yet.
+              </div>
+            ) : (
+              <ul className="cool-dash-req-list" style={{ marginTop: "1.25rem" }}>
+                {documents.map((doc) => (
+                  <li key={doc.id} className="cool-dash-req-item">
+                    <div>
+                      <strong style={{ color: "#e2e8f0", fontFamily: "Manrope, sans-serif", fontSize: "0.85rem", textTransform: "capitalize" }}>
+                        {doc.document_type.replace(/_/g, " ")}
+                      </strong>
+                      <small style={{ color: "#64748b", display: "block", marginTop: "0.1rem" }}>{doc.original_name}</small>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <a
+                        href={toAssetUrl(doc.file_path)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="cool-dash-btn-sm inspect"
+                        style={{ textDecoration: "none" }}
+                      >
+                        Open
+                      </a>
+                      <button
+                        type="button"
+                        className="cool-dash-btn-sm delete"
+                        onClick={() => deleteDocument(doc.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "1rem", gap: "0.75rem" }}>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                style={{
+                  all: "unset", cursor: "pointer", padding: "0.7rem 1.5rem",
+                  borderRadius: "0.85rem", fontSize: "0.88rem", fontWeight: 700,
+                  color: "#94a3b8", background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.1)"
+                }}
               >
-                <option value="10">10th</option>
-                <option value="12">12th</option>
-              </select>
-            </label>
-            <label>
-              Student phone
-              <input
-                value={form.phone}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, phone: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Parent phone
-              <input
-                value={form.guardianPhone}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, guardianPhone: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Parent name
-              <input
-                value={form.guardianName}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, guardianName: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Date of birth
-              <input
-                type="date"
-                value={form.dateOfBirth}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, dateOfBirth: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Gender
-              <input
-                value={form.gender}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, gender: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              School name
-              <input
-                value={form.schoolName}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, schoolName: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Board
-              <input
-                value={form.boardName}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, boardName: event.target.value }))
-                }
-                placeholder="State Board, CBSE, ICSE..."
-                required
-              />
-            </label>
-            <label>
-              Stream
-              <input
-                value={form.streamName}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, streamName: event.target.value }))
-                }
-                placeholder="Science, Commerce, Humanities..."
-              />
-            </label>
-            <label>
-              Passing year
-              <input
-                type="number"
-                min="2018"
-                max="2035"
-                value={form.passingYear}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, passingYear: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Percentage / score
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={form.scorePercent}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, scorePercent: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Roll / register number
-              <input
-                value={form.examRollNo}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, examRollNo: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Target course interest
-              <input
-                value={form.targetCourse}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, targetCourse: event.target.value }))
-                }
-                placeholder="Engineering, Nursing, Commerce..."
-              />
-            </label>
-            <label>
-              City
-              <input
-                value={form.city}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, city: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              State
-              <input
-                value={form.state}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, state: event.target.value }))
-                }
-                required
-              />
-            </label>
-          </div>
-
-          <label>
-            Address
-            <input
-              value={form.addressLine}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, addressLine: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Marks summary
-            <textarea
-              rows={3}
-              value={form.marksSummary}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, marksSummary: event.target.value }))
-              }
-              placeholder="Example: PCM 92%, biology 88%, entrance rank 3210"
-            />
-          </label>
-          <label>
-            Short note about interests
-            <textarea
-              rows={3}
-              value={form.bio}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, bio: event.target.value }))
-              }
-              placeholder="Subjects you enjoy, preferred cities, career direction..."
-            />
-          </label>
-
-          <div className="panel-actions">
-            <button type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save Profile"}
-            </button>
-          </div>
-        </form>
-
-        <section className="panel top-gap">
-          <div className="panel-head">
-            <div>
-              <h2>Academic Documents</h2>
-              <p className="panel-note">
-                Upload at least one 10th or 12th supporting document. PDF, JPG, PNG, and WEBP are
-                accepted.
-              </p>
+                ← Back
+              </button>
+              
+              <div style={{ display: "flex", gap: "0.75rem" }}>
+                <button
+                  type="button"
+                  onClick={saveProfile}
+                  disabled={saving}
+                  className="cool-dash-submit"
+                  style={{ width: "auto", padding: "0.7rem 2rem", background: "rgba(99, 102, 241, 0.2)", color: "#818cf8", boxShadow: "none" }}
+                >
+                  {saving ? "Saving..." : "💾 Save"}
+                </button>
+                {(profileReady || completionPercent === 100) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const complete = await saveProfile();
+                      if (complete) navigate("/dashboard", { replace: true });
+                    }}
+                    className="cool-dash-submit"
+                    style={{ width: "auto", padding: "0.7rem 2rem" }}
+                  >
+                    ✅ Open Dashboard
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-
-          <form className="upload-strip" onSubmit={uploadDocument}>
-            <select
-              value={uploadForm.documentType}
-              onChange={(event) =>
-                setUploadForm((current) => ({ ...current, documentType: event.target.value }))
-              }
-            >
-              {DOCUMENT_TYPES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.webp"
-              onChange={(event) =>
-                setUploadForm((current) => ({
-                  ...current,
-                  file: event.target.files?.[0] || null
-                }))
-              }
-            />
-            <button type="submit" disabled={uploading}>
-              {uploading ? "Uploading..." : "Upload Document"}
-            </button>
-          </form>
-
-          {documents.length === 0 ? (
-            <p className="empty-copy">No academic documents uploaded yet.</p>
-          ) : (
-            <ul className="document-list top-gap">
-              {documents.map((document) => (
-                <li key={document.id}>
-                  <div>
-                    <strong>{document.document_type.replace(/_/g, " ")}</strong>
-                    <span>{document.original_name}</span>
-                  </div>
-                  <div className="row-actions">
-                    <a
-                      className="text-link"
-                      href={toAssetUrl(document.file_path)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open
-                    </a>
-                    <button
-                      type="button"
-                      className="outline-btn"
-                      onClick={() => deleteDocument(document.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </section>
-    </main>
+        )}
+      </main>
+    </div>
   );
 }

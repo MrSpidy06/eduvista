@@ -3,6 +3,10 @@ import pool from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { createUploader, toPublicUploadPath } from "../middleware/upload.js";
 import { createNotification } from "../utils/registration.js";
+import {
+  buildStudentCourseRecommendation,
+  evaluateStudentCourseEligibility
+} from "../utils/admissions.js";
 
 const router = Router();
 const applicationUpload = createUploader("application-documents");
@@ -29,7 +33,7 @@ router.use(requireAuth);
 router.get("/catalog", async (req, res, next) => {
   try {
     const params = [];
-    const filters = [];
+    const filters = ["c.university_id IS NOT NULL"];
 
     if (req.query.q) {
       filters.push(
@@ -63,9 +67,10 @@ router.get("/catalog", async (req, res, next) => {
     const queryParams = req.user.role === "student" ? [req.user.id, ...params] : params;
 
     const [rows] = await pool.query(
-      `SELECT c.id, c.code, c.title, c.category, c.description, c.duration_label,
+      `SELECT c.id, c.code, c.title, c.category, c.delivery_mode, c.description, c.duration_label,
               c.location_state, c.location_city, c.qualification_required,
-              c.approx_fee_total, c.application_deadline, c.required_documents_intro,
+              c.eligible_academic_levels, c.minimum_score_percent, c.approx_fee_total,
+              c.application_deadline, c.required_documents_intro,
               c.brochure_path, up.university_name, up.short_name, up.application_bar_label,
               COUNT(DISTINCT cr.id) AS requirement_count,
               ${req.user.role === "student"
@@ -86,14 +91,68 @@ router.get("/catalog", async (req, res, next) => {
        LEFT JOIN course_applications ca_all ON ca_all.course_id = c.id
        ${whereClause}
        GROUP BY c.id, up.university_name, up.short_name, up.application_bar_label
-       ORDER BY
-         CASE WHEN c.application_deadline IS NULL THEN 1 ELSE 0 END,
-         c.application_deadline ASC,
-         c.created_at DESC`,
+       ORDER BY c.created_at DESC`,
       queryParams
     );
 
-    return res.json({ catalog: rows });
+    if (req.user.role !== "student") {
+      return res.json({ catalog: rows });
+    }
+
+    const [profileRows] = await pool.query(
+      `SELECT academic_level, score_percent, stream_name, target_course, marks_summary, bio,
+              city, state, board_name,
+              (
+                SELECT COUNT(*)
+                FROM student_profile_documents spd
+                WHERE spd.user_id = ?
+              ) AS document_count
+       FROM student_profiles
+       WHERE user_id = ?`,
+      [req.user.id, req.user.id]
+    );
+    const profile = profileRows[0] || null;
+
+    const catalog = rows
+      .map((row) => {
+      const eligibility = evaluateStudentCourseEligibility({ course: row, profile });
+      const recommendation = buildStudentCourseRecommendation({
+        course: row,
+        profile,
+        eligibility
+      });
+      return {
+        ...row,
+        eligible_academic_levels: eligibility.eligibleAcademicLevels,
+        minimum_score_percent: eligibility.minimumScorePercent,
+        is_eligible: eligibility.isEligible,
+        eligibility_summary: eligibility.summary,
+        eligibility_reason: eligibility.reasons[0] || null,
+        recommendation_score: recommendation.score,
+        recommendation_band: recommendation.band,
+        recommendation_reasons: recommendation.reasons
+      };
+    })
+      .sort((left, right) => {
+        if (Number(right.is_eligible) !== Number(left.is_eligible)) {
+          return Number(right.is_eligible) - Number(left.is_eligible);
+        }
+        if (right.recommendation_score !== left.recommendation_score) {
+          return right.recommendation_score - left.recommendation_score;
+        }
+        if (left.application_deadline && right.application_deadline) {
+          return new Date(left.application_deadline).getTime() - new Date(right.application_deadline).getTime();
+        }
+        if (left.application_deadline) {
+          return -1;
+        }
+        if (right.application_deadline) {
+          return 1;
+        }
+        return 0;
+      });
+
+    return res.json({ catalog });
   } catch (error) {
     return next(error);
   }
@@ -244,6 +303,7 @@ router.post("/", requireRole("student"), async (req, res, next) => {
 
     const [courseRows] = await connection.query(
       `SELECT c.id, c.title, c.university_id, c.application_deadline,
+              c.eligible_academic_levels, c.minimum_score_percent,
               c.application_deadline < CURDATE() AS deadline_passed,
               up.university_name
        FROM courses c
@@ -266,12 +326,20 @@ router.post("/", requireRole("student"), async (req, res, next) => {
     }
 
     const [profileRows] = await connection.query(
-      `SELECT phone, marks_summary, bio
+      `SELECT phone, marks_summary, bio, academic_level, score_percent
        FROM student_profiles
        WHERE user_id = ?`,
       [req.user.id]
     );
     const profile = profileRows[0] || null;
+    const eligibility = evaluateStudentCourseEligibility({ course, profile });
+
+    if (!eligibility.isEligible) {
+      await connection.rollback();
+      return res.status(400).json({
+        error: eligibility.reasons[0] || "Student is not eligible for this course."
+      });
+    }
 
     const [[requirementCountRow]] = await connection.query(
       `SELECT COUNT(*) AS total

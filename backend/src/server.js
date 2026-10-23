@@ -14,6 +14,8 @@ import { startSchedulers } from "./services/scheduler.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
+const isSchemaDriftError = (error) =>
+  error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE";
 
 app.use(
   cors({
@@ -42,6 +44,12 @@ app.use("/api/payments", paymentRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
+  if (isSchemaDriftError(err)) {
+    return res.status(503).json({
+      error:
+        "Database schema is out of date. Restart the backend to run migrations or run npm run migrate:schema inside backend."
+    });
+  }
   res.status(500).json({ error: "Unexpected server error." });
 });
 

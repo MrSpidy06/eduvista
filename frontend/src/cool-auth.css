@@ -1,0 +1,973 @@
+/* ============================================
+   COOL AUTH PAGES — Login & Signup
+   Premium glassmorphic design system
+   ============================================ */
+
+/* ---------- Animated background ---------- */
+.cool-auth-shell {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  overflow: hidden;
+  background: #050a18;
+}
+
+.cool-auth-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.5;
+  animation: orbFloat 12s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.cool-auth-orb-1 {
+  width: 500px;
+  height: 500px;
+  top: -10%;
+  left: -5%;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.5), transparent 70%);
+  animation-duration: 14s;
+}
+
+.cool-auth-orb-2 {
+  width: 400px;
+  height: 400px;
+  bottom: -8%;
+  right: -3%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.45), transparent 70%);
+  animation-duration: 18s;
+  animation-delay: -4s;
+}
+
+.cool-auth-orb-3 {
+  width: 300px;
+  height: 300px;
+  top: 40%;
+  left: 50%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.3), transparent 70%);
+  animation-duration: 20s;
+  animation-delay: -8s;
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -25px) scale(1.05); }
+  66% { transform: translate(-20px, 15px) scale(0.95); }
+}
+
+/* ---------- Login container (split layout) ---------- */
+.cool-login-container {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(1080px, 100%);
+  min-height: 640px;
+  border-radius: 1.6rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(20px);
+}
+
+@media (max-width: 780px) {
+  .cool-login-container {
+    grid-template-columns: 1fr;
+  }
+  .cool-login-brand {
+    display: none;
+  }
+}
+
+/* ---------- Brand panel (left) ---------- */
+.cool-login-brand {
+  position: relative;
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background:
+    linear-gradient(160deg, rgba(99, 102, 241, 0.18), transparent 50%),
+    linear-gradient(320deg, rgba(139, 92, 246, 0.12), transparent 50%),
+    rgba(10, 15, 30, 0.92);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cool-login-brand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.15), transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.1), transparent 50%);
+  pointer-events: none;
+}
+
+.cool-login-brand-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.cool-login-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.cool-login-logo-text {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.02em;
+}
+
+.cool-login-hero-title {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(2rem, 3.5vw, 2.8rem);
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.1;
+  margin: 0 0 0.8rem;
+}
+
+.cool-login-hero-sub {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: rgba(148, 163, 184, 0.9);
+  margin: 0 0 2rem;
+  max-width: 38ch;
+}
+
+.cool-login-features {
+  display: grid;
+  gap: 1rem;
+}
+
+.cool-login-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.cool-login-feature-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.cool-login-feature-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: rgba(99, 102, 241, 0.12);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.cool-login-feature-item strong {
+  display: block;
+  font-family: "Manrope", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.cool-login-feature-item p {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.75);
+  line-height: 1.4;
+}
+
+/* ---------- Form panel (right) ---------- */
+.cool-login-form-panel {
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.cool-login-form-inner {
+  max-width: 400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.cool-login-form-header {
+  margin-bottom: 1.8rem;
+}
+
+.cool-login-form-header h2 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0 0 0.4rem;
+}
+
+.cool-login-form-header p {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* ---------- Type tabs ---------- */
+.cool-login-type-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-bottom: 1.8rem;
+}
+
+.cool-login-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.cool-login-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+}
+
+.cool-login-tab.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.2));
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #f1f5f9;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.12);
+}
+
+.cool-login-tab-icon {
+  font-size: 1rem;
+}
+
+/* ---------- Form ---------- */
+.cool-login-form {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.cool-input-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.cool-input-group label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  letter-spacing: 0.02em;
+}
+
+.cool-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cool-input-icon {
+  position: absolute;
+  left: 0.95rem;
+  color: #64748b;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transition: color 0.2s ease;
+}
+
+.cool-input-wrapper input {
+  width: 100%;
+  padding: 0.85rem 0.95rem 0.85rem 2.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  font-size: 0.92rem;
+  transition: all 0.25s ease;
+}
+
+.cool-input-wrapper input::placeholder {
+  color: #475569;
+}
+
+.cool-input-wrapper input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 0 0 20px rgba(99, 102, 241, 0.08);
+}
+
+.cool-input-wrapper input:focus ~ .cool-input-icon,
+.cool-input-wrapper:focus-within .cool-input-icon {
+  color: #818cf8;
+}
+
+.cool-input-toggle {
+  position: absolute;
+  right: 0.6rem;
+  padding: 0.35rem 0.65rem !important;
+  font-size: 0.72rem !important;
+  font-weight: 700;
+  color: #94a3b8 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.5rem !important;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: all 0.2s ease;
+  min-height: unset !important;
+}
+
+.cool-input-toggle:hover:enabled {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #e2e8f0 !important;
+  transform: none !important;
+}
+
+/* ---------- Error ---------- */
+.cool-auth-error {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: #fca5a5;
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: shakeIn 0.35s ease;
+}
+
+@keyframes shakeIn {
+  0% { transform: translateX(-6px); }
+  25% { transform: translateX(4px); }
+  50% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+
+/* ---------- Submit button ---------- */
+.cool-auth-submit {
+  width: 100%;
+  padding: 0.9rem 1.2rem !important;
+  border: none !important;
+  border-radius: 0.85rem !important;
+  font-size: 0.95rem !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+  cursor: pointer;
+  transition: all 0.3s ease !important;
+  box-shadow:
+    0 8px 25px rgba(99, 102, 241, 0.3),
+    0 0 0 0 rgba(99, 102, 241, 0) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.cool-auth-submit:hover:enabled {
+  transform: translateY(-2px) !important;
+  box-shadow:
+    0 14px 35px rgba(99, 102, 241, 0.35),
+    0 0 0 2px rgba(99, 102, 241, 0.15) !important;
+  filter: brightness(1.08) !important;
+}
+
+.cool-auth-submit:active:enabled {
+  transform: translateY(0) !important;
+}
+
+/* Spinner */
+.cool-auth-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- Footer ---------- */
+.cool-login-footer {
+  margin-top: 1.6rem;
+  text-align: center;
+}
+
+.cool-login-footer p {
+  color: #94a3b8;
+  font-size: 0.88rem;
+  margin: 0;
+}
+
+.cool-login-footer a {
+  color: #818cf8;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.cool-login-footer a:hover {
+  color: #a5b4fc;
+  text-decoration: underline;
+}
+
+.cool-login-back {
+  display: inline-block;
+  margin-top: 0.8rem;
+  font-size: 0.82rem;
+  color: #64748b !important;
+}
+
+.cool-login-back:hover {
+  color: #94a3b8 !important;
+}
+
+/* ============================================
+   SIGNUP PAGE
+   ============================================ */
+.cool-signup-container {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  width: min(1140px, 100%);
+  border-radius: 1.6rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+@media (max-width: 860px) {
+  .cool-signup-container {
+    grid-template-columns: 1fr;
+  }
+  .cool-signup-brand {
+    display: none;
+  }
+}
+
+/* Signup brand panel */
+.cool-signup-brand {
+  position: relative;
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background:
+    linear-gradient(160deg, rgba(99, 102, 241, 0.18), transparent 50%),
+    linear-gradient(320deg, rgba(139, 92, 246, 0.12), transparent 50%),
+    rgba(10, 15, 30, 0.92);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cool-signup-brand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 70%, rgba(99, 102, 241, 0.15), transparent 50%),
+    radial-gradient(circle at 70% 30%, rgba(139, 92, 246, 0.1), transparent 50%);
+  pointer-events: none;
+}
+
+.cool-signup-brand-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.cool-signup-hero-title {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(2rem, 3.5vw, 2.6rem);
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.1;
+  margin: 0 0 0.8rem;
+}
+
+.cool-signup-hero-sub {
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: rgba(148, 163, 184, 0.9);
+  margin: 0 0 2rem;
+  max-width: 42ch;
+}
+
+/* Journey steps */
+.cool-signup-steps {
+  display: grid;
+  gap: 0.75rem;
+  counter-reset: signup-step;
+}
+
+.cool-signup-step {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.25s ease;
+  counter-increment: signup-step;
+}
+
+.cool-signup-step:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.cool-signup-step-num {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.85), rgba(139, 92, 246, 0.75));
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.cool-signup-step strong {
+  display: block;
+  font-family: "Manrope", sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.cool-signup-step p {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.75);
+  line-height: 1.4;
+}
+
+/* Signup form panel */
+.cool-signup-form-panel {
+  padding: 2rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.85);
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+.cool-signup-form-inner {
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.cool-signup-form-header {
+  margin-bottom: 1.5rem;
+}
+
+.cool-signup-form-header h2 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0 0 0.4rem;
+}
+
+.cool-signup-form-header p {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+/* Signup type tabs */
+.cool-signup-type-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.cool-signup-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.8rem 0.5rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: none;
+}
+
+.cool-signup-tab:hover:enabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  transform: none;
+}
+
+.cool-signup-tab.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.2));
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #f1f5f9;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.12);
+}
+
+.cool-signup-tab-icon {
+  font-size: 1.4rem;
+}
+
+.cool-signup-tab-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+/* Signup form grid */
+.cool-signup-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.cool-signup-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+@media (max-width: 500px) {
+  .cool-signup-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Signup select styling */
+.cool-input-wrapper select {
+  width: 100%;
+  padding: 0.85rem 0.95rem 0.85rem 2.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f1f5f9;
+  font-size: 0.92rem;
+  transition: all 0.25s ease;
+  appearance: none;
+}
+
+.cool-input-wrapper select:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 0 0 20px rgba(99, 102, 241, 0.08);
+}
+
+/* Signup footer */
+.cool-signup-footer {
+  margin-top: 1.4rem;
+  text-align: center;
+}
+
+.cool-signup-footer p {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.cool-signup-footer a {
+  color: #818cf8;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cool-signup-footer a:hover {
+  color: #a5b4fc;
+  text-decoration: underline;
+}
+
+.cool-signup-disclaimer {
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  color: #475569 !important;
+}
+
+/* ============================================
+   PROFILE SETUP PAGE
+   ============================================ */
+.cool-setup-container {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(1080px, 100%);
+  min-height: 640px;
+  border-radius: 1.6rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(20px);
+}
+
+@media (max-width: 780px) {
+  .cool-setup-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cool-setup-brand {
+  position: relative;
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background:
+    linear-gradient(160deg, rgba(99, 102, 241, 0.18), transparent 50%),
+    linear-gradient(320deg, rgba(139, 92, 246, 0.12), transparent 50%),
+    rgba(10, 15, 30, 0.92);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cool-setup-brand-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.cool-setup-hero-title {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(2rem, 3.5vw, 2.6rem);
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.1;
+  margin: 0 0 0.8rem;
+}
+
+.cool-setup-hero-sub {
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: rgba(148, 163, 184, 0.9);
+  margin: 0 0 2rem;
+  max-width: 42ch;
+}
+
+.cool-setup-progress {
+  margin-bottom: 2rem;
+}
+
+.cool-setup-progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 0.5rem;
+}
+
+.cool-setup-progress-pct {
+  color: #818cf8;
+}
+
+.cool-setup-progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.cool-setup-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.cool-setup-checklist {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 2.5rem;
+}
+
+.cool-setup-check-item {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.cool-setup-check-item.done {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.05);
+  color: #e2e8f0;
+}
+
+.cool-setup-check-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.8rem;
+}
+
+.cool-setup-check-icon.done {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.cool-setup-side-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.cool-setup-dashboard-btn {
+  width: 100%;
+  padding: 0.8rem 1rem !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  background: #f8fafc !important;
+  border: none !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.2s ease !important;
+}
+
+.cool-setup-dashboard-btn:hover:enabled {
+  background: #ffffff !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(255, 255, 255, 0.15) !important;
+}
+
+.cool-setup-dashboard-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+  box-shadow: none !important;
+}
+
+.cool-setup-logout-btn {
+  width: 100%;
+  padding: 0.8rem 1rem !important;
+  border-radius: 0.75rem !important;
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+  color: #94a3b8 !important;
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  transition: all 0.2s ease !important;
+  box-shadow: none !important;
+}
+
+.cool-setup-logout-btn:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #cbd5e1 !important;
+}
+
+.cool-setup-form-panel {
+  padding: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.cool-setup-form-inner {
+  max-width: 440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.cool-setup-form-header {
+  margin-bottom: 2rem;
+}
+
+.cool-setup-form-header h2 {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #f8fafc;
+  margin: 0 0 0.4rem;
+}
+
+.cool-setup-form-header p {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.cool-setup-form {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.cool-setup-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.08);
+  color: #34d399;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+}
+
+.cool-setup-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: #e2e8f0;
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}

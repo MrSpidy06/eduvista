@@ -76,9 +76,42 @@ router.get("/users", async (req, res, next) => {
     const roleFilter = req.query.role ? String(req.query.role) : null;
     const params = [];
     let query = `SELECT u.id, u.full_name, u.email, u.role, u.year_level, u.cgpa,
-                        d.name AS department_name
+                        d.name AS department_name,
+                        up.university_name,
+                        up.state AS university_state,
+                        up.city AS university_city,
+                        (
+                          SELECT COUNT(*)
+                          FROM courses c
+                          WHERE c.university_id = u.id
+                        ) AS course_count,
+                        CASE
+                          WHEN u.role = 'student' THEN (
+                            sp.phone IS NOT NULL AND sp.phone <> '' AND
+                            sp.guardian_phone IS NOT NULL AND sp.guardian_phone <> '' AND
+                            sp.academic_level IS NOT NULL AND sp.academic_level <> '' AND
+                            sp.city IS NOT NULL AND sp.city <> '' AND
+                            sp.state IS NOT NULL AND sp.state <> '' AND
+                            sp.board_name IS NOT NULL AND sp.board_name <> '' AND
+                            sp.school_name IS NOT NULL AND sp.school_name <> '' AND
+                            sp.score_percent IS NOT NULL AND
+                            (
+                              SELECT COUNT(*)
+                              FROM student_profile_documents spd
+                              WHERE spd.user_id = u.id
+                            ) > 0
+                          )
+                          WHEN u.role = 'university' THEN (
+                            up.university_name IS NOT NULL AND up.university_name <> '' AND
+                            up.state IS NOT NULL AND up.state <> '' AND
+                            up.city IS NOT NULL AND up.city <> ''
+                          )
+                          ELSE 1
+                        END AS profile_complete
                  FROM users u
-                 LEFT JOIN departments d ON d.id = u.department_id`;
+                 LEFT JOIN departments d ON d.id = u.department_id
+                 LEFT JOIN student_profiles sp ON sp.user_id = u.id
+                 LEFT JOIN university_profiles up ON up.user_id = u.id`;
 
     if (roleFilter) {
       query += " WHERE u.role = ?";
@@ -320,26 +353,35 @@ router.get("/courses", async (req, res, next) => {
   try {
     const semesterId = Number(req.query.semesterId) || null;
     const params = [];
-    let filter = "";
+    let filter = "WHERE c.university_id IS NOT NULL";
 
     if (semesterId) {
-      filter = "WHERE c.semester_id = ?";
+      filter += " AND c.semester_id = ?";
       params.push(semesterId);
     }
 
     const [rows] = await pool.query(
       `SELECT c.id, c.code, c.course_group, c.section_label, c.title, c.description,
+              c.category, c.duration_label, c.qualification_required,
+              c.eligible_academic_levels, c.minimum_score_percent,
+              c.approx_fee_total, c.application_deadline, c.location_state, c.location_city,
+              c.required_documents_intro, c.brochure_path,
               c.credits, c.is_core, c.seats_total, c.seats_available, c.waitlist_capacity,
               c.schedule_block, c.prerequisites, c.min_year_level, c.min_cgpa, c.faculty_id,
               d.name AS department_name,
               s.name AS semester_name, s.academic_year,
-              faculty.full_name AS faculty_name
+              faculty.full_name AS faculty_name,
+              up.university_name,
+              COUNT(DISTINCT ca.id) AS application_count
        FROM courses c
        LEFT JOIN departments d ON d.id = c.department_id
        LEFT JOIN semesters s ON s.id = c.semester_id
        LEFT JOIN users faculty ON faculty.id = c.faculty_id
+       LEFT JOIN university_profiles up ON up.user_id = c.university_id
+       LEFT JOIN course_applications ca ON ca.course_id = c.id
        ${filter}
-       ORDER BY c.semester_id DESC, c.course_group ASC, c.section_label ASC`,
+       GROUP BY c.id, d.name, s.name, s.academic_year, faculty.full_name, up.university_name
+       ORDER BY c.application_deadline IS NULL, c.application_deadline ASC, c.title ASC`,
       params
     );
 
@@ -909,13 +951,42 @@ router.get("/analytics/overview", async (_req, res, next) => {
        FROM users`
     );
 
-    const [[courses]] = await pool.query("SELECT COUNT(*) AS total FROM courses");
+    const [[courses]] = await pool.query(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE
+                WHEN university_id IS NOT NULL
+                 AND eligible_academic_levels IS NOT NULL
+                 AND eligible_academic_levels <> ''
+                 AND qualification_required IS NOT NULL
+                 AND qualification_required <> ''
+                THEN 1 ELSE 0
+              END) AS admissions_ready,
+              SUM(CASE
+                WHEN university_id IS NOT NULL
+                 AND (application_deadline IS NULL OR approx_fee_total IS NULL OR approx_fee_total = '')
+                THEN 1 ELSE 0
+              END) AS needs_review
+       FROM courses`
+    );
     const [[enrollments]] = await pool.query(
       `SELECT
          SUM(CASE WHEN status IN ('registered', 'approved', 'pending') THEN 1 ELSE 0 END) AS active,
          SUM(CASE WHEN status = 'waitlisted' THEN 1 ELSE 0 END) AS waitlisted,
          SUM(CASE WHEN status = 'dropped' THEN 1 ELSE 0 END) AS dropped
        FROM enrollments`
+    );
+    const [[applications]] = await pool.query(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) AS review_queue,
+              SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) AS accepted
+       FROM course_applications`
+    );
+    const [[universitiesReady]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM university_profiles
+       WHERE university_name IS NOT NULL AND university_name <> ''
+         AND state IS NOT NULL AND state <> ''
+         AND city IS NOT NULL AND city <> ''`
     );
 
     return res.json({
@@ -925,6 +996,12 @@ router.get("/analytics/overview", async (_req, res, next) => {
         faculty: Number(users.faculty || 0),
         admins: Number(users.admins || 0),
         courses: Number(courses.total || 0),
+        admissionsReadyCourses: Number(courses.admissions_ready || 0),
+        listingsNeedingReview: Number(courses.needs_review || 0),
+        admissionsApplications: Number(applications.total || 0),
+        admissionsReviewQueue: Number(applications.review_queue || 0),
+        acceptedAdmissions: Number(applications.accepted || 0),
+        readyUniversities: Number(universitiesReady.total || 0),
         activeEnrollments: Number(enrollments.active || 0),
         waitlisted: Number(enrollments.waitlisted || 0),
         dropped: Number(enrollments.dropped || 0)
@@ -940,15 +1017,12 @@ router.get("/analytics/departments", async (_req, res, next) => {
     const [rows] = await pool.query(
       `SELECT d.id, d.code, d.name,
               COUNT(DISTINCT c.id) AS course_count,
-              COUNT(DISTINCT CASE
-                WHEN e.status IN ('registered', 'approved', 'pending') THEN e.id
-                ELSE NULL
-              END) AS active_enrollments
+              COUNT(DISTINCT ca.id) AS application_count
        FROM departments d
        LEFT JOIN courses c ON c.department_id = d.id
-       LEFT JOIN enrollments e ON e.course_id = c.id
+       LEFT JOIN course_applications ca ON ca.course_id = c.id
        GROUP BY d.id, d.code, d.name
-       ORDER BY active_enrollments DESC, d.name ASC`
+       ORDER BY application_count DESC, d.name ASC`
     );
 
     return res.json({ report: rows });
@@ -960,16 +1034,17 @@ router.get("/analytics/departments", async (_req, res, next) => {
 router.get("/analytics/popular-courses", async (_req, res, next) => {
   try {
     const [rows] = await pool.query(
-      `SELECT c.id, c.code, c.title,
-              COUNT(CASE WHEN e.status IN ('registered', 'approved', 'pending') THEN 1 END) AS active_enrollments,
-              COUNT(CASE WHEN w.status = 'active' THEN 1 END) AS waitlist_count,
-              COALESCE(ROUND(AVG(cr.rating), 2), 0) AS avg_rating
+      `SELECT c.id, c.code, c.title, c.category, up.university_name,
+              COUNT(ca.id) AS application_count,
+              SUM(CASE WHEN ca.status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) AS review_queue,
+              SUM(CASE WHEN ca.status = 'accepted' THEN 1 ELSE 0 END) AS accepted_count,
+              COALESCE(ROUND(AVG(ca.fit_score), 2), 0) AS avg_fit_score
        FROM courses c
-       LEFT JOIN enrollments e ON e.course_id = c.id
-       LEFT JOIN waitlist_entries w ON w.course_id = c.id
-       LEFT JOIN course_reviews cr ON cr.course_id = c.id
-       GROUP BY c.id, c.code, c.title
-       ORDER BY active_enrollments DESC, waitlist_count DESC
+       LEFT JOIN course_applications ca ON ca.course_id = c.id
+       LEFT JOIN university_profiles up ON up.user_id = c.university_id
+       WHERE c.university_id IS NOT NULL
+       GROUP BY c.id, c.code, c.title, c.category, up.university_name
+       ORDER BY application_count DESC, accepted_count DESC, avg_fit_score DESC
        LIMIT 20`
     );
 
@@ -982,11 +1057,12 @@ router.get("/analytics/popular-courses", async (_req, res, next) => {
 router.get("/analytics/trends", async (_req, res, next) => {
   try {
     const [rows] = await pool.query(
-      `SELECT DATE_FORMAT(enrolled_at, '%Y-%m') AS month,
-              COUNT(*) AS registrations,
-              SUM(CASE WHEN status = 'waitlisted' THEN 1 ELSE 0 END) AS waitlisted
-       FROM enrollments
-       GROUP BY DATE_FORMAT(enrolled_at, '%Y-%m')
+      `SELECT DATE_FORMAT(applied_at, '%Y-%m') AS month,
+              COUNT(*) AS applications,
+              SUM(CASE WHEN status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) AS under_review,
+              SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) AS accepted
+       FROM course_applications
+       GROUP BY DATE_FORMAT(applied_at, '%Y-%m')
        ORDER BY month ASC`
     );
 
@@ -1001,29 +1077,49 @@ router.get("/reports/export", async (req, res, next) => {
     const format = String(req.query.format || "excel").toLowerCase();
 
     const [rows] = await pool.query(
-      `SELECT d.name AS department,
+      `SELECT up.university_name AS university,
+              c.category,
               c.code,
               c.title,
-              COUNT(CASE WHEN e.status IN ('registered', 'approved', 'pending') THEN 1 END) AS active_enrollments,
-              COUNT(CASE WHEN e.status = 'waitlisted' THEN 1 END) AS waitlisted,
-              COALESCE(ROUND(AVG(cr.rating), 2), 0) AS avg_rating
+              c.location_state,
+              c.location_city,
+              c.duration_label,
+              c.qualification_required,
+              c.eligible_academic_levels,
+              c.minimum_score_percent,
+              c.approx_fee_total,
+              c.application_deadline,
+              COUNT(ca.id) AS application_count,
+              SUM(CASE WHEN ca.status IN ('submitted', 'under_review') THEN 1 ELSE 0 END) AS review_queue,
+              SUM(CASE WHEN ca.status = 'accepted' THEN 1 ELSE 0 END) AS accepted_count
        FROM courses c
-       LEFT JOIN departments d ON d.id = c.department_id
-       LEFT JOIN enrollments e ON e.course_id = c.id
-       LEFT JOIN course_reviews cr ON cr.course_id = c.id
-       GROUP BY d.name, c.code, c.title
-       ORDER BY active_enrollments DESC, c.code ASC`
+       LEFT JOIN university_profiles up ON up.user_id = c.university_id
+       LEFT JOIN course_applications ca ON ca.course_id = c.id
+       WHERE c.university_id IS NOT NULL
+       GROUP BY up.university_name, c.category, c.code, c.title, c.location_state, c.location_city,
+                c.duration_label, c.qualification_required, c.eligible_academic_levels,
+                c.minimum_score_percent, c.approx_fee_total, c.application_deadline
+       ORDER BY application_count DESC, c.title ASC`
     );
 
     if (format === "excel") {
       const csv = buildCsv(
         [
-          { label: "Department", key: "department" },
+          { label: "University", key: "university" },
+          { label: "Category", key: "category" },
           { label: "Course Code", key: "code" },
           { label: "Course Title", key: "title" },
-          { label: "Active Enrollments", key: "active_enrollments" },
-          { label: "Waitlisted", key: "waitlisted" },
-          { label: "Average Rating", key: "avg_rating" }
+          { label: "State", key: "location_state" },
+          { label: "City", key: "location_city" },
+          { label: "Duration", key: "duration_label" },
+          { label: "Qualification Required", key: "qualification_required" },
+          { label: "Eligible Academic Levels", key: "eligible_academic_levels" },
+          { label: "Minimum Percentage", key: "minimum_score_percent" },
+          { label: "Approx Fee", key: "approx_fee_total" },
+          { label: "Deadline", key: "application_deadline" },
+          { label: "Applications", key: "application_count" },
+          { label: "Review Queue", key: "review_queue" },
+          { label: "Accepted", key: "accepted_count" }
         ],
         rows
       );
@@ -1039,9 +1135,9 @@ router.get("/reports/export", async (req, res, next) => {
     if (format === "pdf") {
       const lines = rows.slice(0, 30).map(
         (row) =>
-          `${row.code} | Enrolled: ${row.active_enrollments} | Waitlist: ${row.waitlisted} | Rating: ${row.avg_rating}`
+          `${row.title} | Apps: ${row.application_count} | Review: ${row.review_queue} | Accepted: ${row.accepted_count}`
       );
-      const pdfBuffer = buildSimplePdf("EduVista Enrollment Report", lines);
+      const pdfBuffer = buildSimplePdf("EduVista Admissions Report", lines);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
         "Content-Disposition",

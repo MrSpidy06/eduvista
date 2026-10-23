@@ -3,12 +3,72 @@ import pool from "../db.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { createUploader, toPublicUploadPath } from "../middleware/upload.js";
 import { createNotification } from "../utils/registration.js";
+import {
+  buildGeneratedCourseCode,
+  normalizeCourseDeliveryMode,
+  serializeEligibleAcademicLevels,
+  validateSchoolAdmissionsCourse
+} from "../utils/admissions.js";
 
 const router = Router();
 const assetUpload = createUploader("university-assets");
 
 const requireOwnershipFilter = (req) =>
   req.user.role === "admin" ? { clause: "", params: [] } : { clause: "WHERE c.university_id = ?", params: [req.user.id] };
+
+const parseMinimumScorePercent = (value) => {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  if (Number.isNaN(numericValue) || numericValue < 0 || numericValue > 100) {
+    return Number.NaN;
+  }
+
+  return numericValue;
+};
+
+const getCoursePayloadValidationError = ({
+  title,
+  category,
+  deliveryMode,
+  locationState,
+  locationCity,
+  durationLabel,
+  qualificationRequired,
+  approxFeeTotal
+}) => {
+  if (!String(title || "").trim()) {
+    return "Course name is required.";
+  }
+
+  if (!String(category || "").trim()) {
+    return "Category is required.";
+  }
+
+  if (!normalizeCourseDeliveryMode(deliveryMode)) {
+    return "Delivery mode must be offline, online, or both.";
+  }
+
+  if (!String(locationState || "").trim() || !String(locationCity || "").trim()) {
+    return "State and City/Location are required for every course.";
+  }
+
+  if (!String(durationLabel || "").trim()) {
+    return "Duration of course is required.";
+  }
+
+  if (!String(qualificationRequired || "").trim()) {
+    return "Qualification Required is mandatory for every course listing.";
+  }
+
+  if (!String(approxFeeTotal || "").trim()) {
+    return "Approx Fee (Total) is required.";
+  }
+
+  return null;
+};
 
 router.use(requireAuth);
 router.use(requireRole("university", "admin"));
@@ -57,22 +117,25 @@ router.get("/courses", async (req, res, next) => {
   try {
     const ownership = requireOwnershipFilter(req);
     const [rows] = await pool.query(
-      `SELECT c.id, c.code, c.title, c.description, c.category, c.credits,
+      `SELECT c.id, c.code, c.title, c.description, c.category, c.delivery_mode, c.credits,
               c.seats_total, c.schedule_block, c.department_id, c.semester_id,
               c.location_state, c.location_city, c.duration_label,
-              c.qualification_required, c.approx_fee_total, c.application_deadline,
+              c.qualification_required, c.eligible_academic_levels,
+              c.minimum_score_percent, c.approx_fee_total, c.application_deadline,
               c.required_documents_intro, c.brochure_path,
               s.name AS semester_name, s.academic_year,
               up.university_name,
+              u.email AS institution_email,
               COUNT(DISTINCT ca.id) AS application_count,
               COUNT(DISTINCT cr.id) AS requirement_count
        FROM courses c
        LEFT JOIN semesters s ON s.id = c.semester_id
        LEFT JOIN university_profiles up ON up.user_id = c.university_id
+       LEFT JOIN users u ON u.id = c.university_id
        LEFT JOIN course_applications ca ON ca.course_id = c.id
        LEFT JOIN course_requirements cr ON cr.course_id = c.id
        ${ownership.clause}
-       GROUP BY c.id, s.name, s.academic_year, up.university_name
+       GROUP BY c.id, s.name, s.academic_year, up.university_name, u.email
        ORDER BY c.created_at DESC`,
       ownership.params
     );
@@ -90,6 +153,7 @@ router.post("/courses", async (req, res, next) => {
       code,
       title,
       category,
+      deliveryMode,
       description,
       credits,
       seatsTotal,
@@ -100,37 +164,77 @@ router.post("/courses", async (req, res, next) => {
       locationCity,
       durationLabel,
       qualificationRequired,
+      eligibleAcademicLevels,
+      minimumScorePercent,
       approxFeeTotal,
       applicationDeadline,
       brochurePath,
       requiredDocumentsIntro
     } = req.body;
 
-    if (!code || !title || !category || !qualificationRequired) {
-      return res.status(400).json({
-        error: "code, title, category, and qualificationRequired are required."
-      });
+    const payloadValidationError = getCoursePayloadValidationError({
+      title,
+      category,
+      deliveryMode,
+      locationState,
+      locationCity,
+      durationLabel,
+      qualificationRequired,
+      approxFeeTotal
+    });
+    if (payloadValidationError) {
+      return res.status(400).json({ error: payloadValidationError });
+    }
+
+    const parsedMinimumScore = parseMinimumScorePercent(minimumScorePercent);
+    if (Number.isNaN(parsedMinimumScore)) {
+      return res.status(400).json({ error: "minimumScorePercent must be between 0 and 100." });
+    }
+
+    const eligibilityValidationError = validateSchoolAdmissionsCourse({
+      eligibleAcademicLevels,
+      qualificationRequired
+    });
+    if (eligibilityValidationError) {
+      return res.status(400).json({ error: eligibilityValidationError });
     }
 
     await connection.beginTransaction();
 
-    const normalizedCode = String(code).trim().toUpperCase();
+    const [profileRows] = await connection.query(
+      `SELECT university_name
+       FROM university_profiles
+       WHERE user_id = ?
+       LIMIT 1`,
+      [req.user.role === "admin" ? Number(req.body.universityId) || null : req.user.id]
+    );
+
+    const normalizedCode =
+      String(code || "").trim().toUpperCase() ||
+      buildGeneratedCourseCode({
+        title,
+        universityName: profileRows[0]?.university_name || "university",
+        userId: req.user.role === "admin" ? Number(req.body.universityId) || req.user.id : req.user.id
+      });
     const group = normalizedCode.includes("-")
       ? normalizedCode.split("-").slice(0, 2).join("-")
       : normalizedCode;
+    const normalizedDeliveryMode = normalizeCourseDeliveryMode(deliveryMode);
 
     const [result] = await connection.query(
-      `INSERT INTO courses
-         (code, course_group, section_label, category, title, description, credits,
-          seats_total, seats_available, waitlist_capacity, schedule_block, department,
-          department_id, semester_id, university_id, location_state, location_city,
-          duration_label, qualification_required, approx_fee_total, application_deadline,
-          brochure_path, required_documents_intro)
-       VALUES (?, ?, 'A', ?, ?, ?, ?, ?, ?, 50, ?, 'General', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       `INSERT INTO courses
+         (code, course_group, section_label, category, delivery_mode, title, description, credits,
+         seats_total, seats_available, waitlist_capacity, schedule_block, department,
+         department_id, semester_id, university_id, location_state, location_city,
+         duration_label, qualification_required, eligible_academic_levels,
+         minimum_score_percent, approx_fee_total, application_deadline,
+         brochure_path, required_documents_intro)
+       VALUES (?, ?, 'A', ?, ?, ?, ?, ?, ?, ?, 50, ?, 'General', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         normalizedCode,
         group,
         String(category).trim(),
+        normalizedDeliveryMode,
         String(title).trim(),
         description || null,
         Number(credits) || 4,
@@ -144,12 +248,24 @@ router.post("/courses", async (req, res, next) => {
         locationCity || null,
         durationLabel || null,
         qualificationRequired || null,
+        serializeEligibleAcademicLevels(eligibleAcademicLevels) || null,
+        parsedMinimumScore,
         approxFeeTotal || null,
         applicationDeadline || null,
         brochurePath || null,
         requiredDocumentsIntro || null
       ]
     );
+
+    if (Array.isArray(req.body.requirements) && req.body.requirements.length > 0) {
+      for (const reqItem of req.body.requirements) {
+        if (!reqItem.documentName) continue;
+        await connection.query(
+          `INSERT INTO course_requirements (course_id, document_name, is_required, instructions) VALUES (?, ?, ?, ?)`,
+          [result.insertId, String(reqItem.documentName).trim(), reqItem.isRequired === false ? 0 : 1, reqItem.instructions || null]
+        );
+      }
+    }
 
     await connection.commit();
     return res.status(201).json({ courseId: result.insertId });
@@ -190,6 +306,7 @@ router.put("/courses/:id", async (req, res, next) => {
     const {
       title,
       category,
+      deliveryMode,
       description,
       credits,
       seatsTotal,
@@ -200,23 +317,54 @@ router.put("/courses/:id", async (req, res, next) => {
       locationCity,
       durationLabel,
       qualificationRequired,
+      eligibleAcademicLevels,
+      minimumScorePercent,
       approxFeeTotal,
       applicationDeadline,
       brochurePath,
       requiredDocumentsIntro
     } = req.body;
 
+    const payloadValidationError = getCoursePayloadValidationError({
+      title,
+      category,
+      deliveryMode,
+      locationState,
+      locationCity,
+      durationLabel,
+      qualificationRequired,
+      approxFeeTotal
+    });
+    if (payloadValidationError) {
+      return res.status(400).json({ error: payloadValidationError });
+    }
+
+    const parsedMinimumScore = parseMinimumScorePercent(minimumScorePercent);
+    if (Number.isNaN(parsedMinimumScore)) {
+      return res.status(400).json({ error: "minimumScorePercent must be between 0 and 100." });
+    }
+
+    const eligibilityValidationError = validateSchoolAdmissionsCourse({
+      eligibleAcademicLevels,
+      qualificationRequired
+    });
+    if (eligibilityValidationError) {
+      return res.status(400).json({ error: eligibilityValidationError });
+    }
+
     await pool.query(
       `UPDATE courses
-       SET title = ?, category = ?, description = ?, credits = ?, seats_total = ?,
+       SET title = ?, category = ?, delivery_mode = ?, description = ?, credits = ?, seats_total = ?,
            seats_available = LEAST(seats_total, ?), schedule_block = ?, department_id = ?,
            semester_id = ?, location_state = ?, location_city = ?, duration_label = ?,
-           qualification_required = ?, approx_fee_total = ?, application_deadline = ?,
+           qualification_required = ?, eligible_academic_levels = ?,
+           minimum_score_percent = ?, approx_fee_total = ?, application_deadline = ?,
            brochure_path = ?, required_documents_intro = ?
        WHERE id = ?`,
       [
         title || "",
         category || "General",
+        normalizeCourseDeliveryMode(deliveryMode),
         description || null,
         Number(credits) || 4,
         Number(seatsTotal) || 40,
@@ -228,6 +376,8 @@ router.put("/courses/:id", async (req, res, next) => {
         locationCity || null,
         durationLabel || null,
         qualificationRequired || null,
+        serializeEligibleAcademicLevels(eligibleAcademicLevels) || null,
+        parsedMinimumScore,
         approxFeeTotal || null,
         applicationDeadline || null,
         brochurePath || null,
@@ -235,6 +385,17 @@ router.put("/courses/:id", async (req, res, next) => {
         id
       ]
     );
+
+    if (Array.isArray(req.body.requirements)) {
+      await pool.query(`DELETE FROM course_requirements WHERE course_id = ?`, [id]);
+      for (const reqItem of req.body.requirements) {
+        if (!reqItem.documentName) continue;
+        await pool.query(
+          `INSERT INTO course_requirements (course_id, document_name, is_required, instructions) VALUES (?, ?, ?, ?)`,
+          [id, String(reqItem.documentName).trim(), reqItem.isRequired === false ? 0 : 1, reqItem.instructions || null]
+        );
+      }
+    }
 
     return res.json({ message: "Course updated successfully." });
   } catch (error) {

@@ -1,4 +1,27 @@
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+const REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 15000);
+
+const fetchWithTimeout = async (path, options = {}) => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(`${API_BASE}${path}`, {
+      ...options,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Request timed out. Check that the backend is running and responsive.");
+    }
+    if (error instanceof TypeError) {
+      throw new Error("Cannot reach the backend. Check that the API server is running.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
 
 const parseError = async (response) => {
   let payload = null;
@@ -39,7 +62,7 @@ const withQuery = (path, query = {}) => {
 };
 
 const request = async (path, { token, method = "GET", body, headers } = {}) => {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetchWithTimeout(path, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -53,7 +76,7 @@ const request = async (path, { token, method = "GET", body, headers } = {}) => {
 };
 
 const requestRaw = async (path, { token, method = "GET", body } = {}) => {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetchWithTimeout(path, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -71,7 +94,7 @@ const requestRaw = async (path, { token, method = "GET", body } = {}) => {
 };
 
 const requestForm = async (path, { token, method = "POST", formData } = {}) => {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetchWithTimeout(path, {
     method,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {})
