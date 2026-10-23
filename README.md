@@ -151,3 +151,6 @@ Frontend: `http://localhost:5173`
 - `/api/payments/*`
 - `/api/admin/*`
 - `/api/faculty/*`
+
+## Repository description
+EduVista is an online web application for educational purposes.
